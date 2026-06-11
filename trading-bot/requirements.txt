@@ -1,0 +1,9 @@
+anthropic>=0.25.0
+python-binance>=1.0.19
+ccxt>=4.3.0
+python-telegram-bot>=21.0
+pandas>=2.0.0
+numpy>=1.26.0
+schedule>=1.2.0
+python-dotenv>=1.0.0
+ta>=0.11.0
