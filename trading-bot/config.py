@@ -3,12 +3,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# API Keys (from .env)
-BINANCE_API_KEY: str = os.getenv("BINANCE_API_KEY", "")
-BINANCE_SECRET: str = os.getenv("BINANCE_SECRET", "")
-ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
+# ── Optional credentials ──────────────────────────────────────────────────────
+# Telegram: only needed to receive setup notifications
 TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", "")
+TELEGRAM_CHAT_ID:   str = os.getenv("TELEGRAM_CHAT_ID",   "")
+
+# Anthropic API key: only needed for standalone mode (without Claude Desktop)
+# When running as MCP server inside Claude Desktop, leave this empty.
+ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
+
+# Market data comes from Binance public REST endpoints — no API key required.
 
 # Trading pairs
 PAIRS: list[str] = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]
