@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tradingbot.autorun</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/tomassipelis/trading-bot/run_main.sh</string>
+    </array>
+
+    <!-- Paleisti iš karto kai sistema paleidžiama -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Iš naujo paleisti jei crashina -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/tomassipelis/trading-bot/logs/bot.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/tomassipelis/trading-bot/logs/bot.log</string>
+</dict>
+</plist>

@@ -86,14 +86,10 @@ def scan_markets() -> None:
                 logger.info("%s: confidence %d < %d", pair, confidence, MIN_CONFIDENCE_SCORE)
                 continue
         else:
-            # No AI key — use raw analysis; log and skip sending
-            logger.info(
-                "%s: VALID setup (RR=%.1f) — ANTHROPIC_API_KEY nenustatytas, "
-                "naudok Claude Desktop MCP mode",
-                pair, analysis.get("rr_ratio", 0)
-            )
-            print("\n" + build_analysis_context(analysis, position) + "\n")
-            continue
+            # No ANTHROPIC_API_KEY — confluence filter (5 sąlygos + R:R ≥ 3) jau
+            # pakankamai griežtas, siunčiame tiesiai į Telegram.
+            confidence = 0   # bus rodoma "Auto" pranešime
+            decision   = {"confidence": 0, "reasoning": "Auto: 5/5 confluence ✓"}
 
         rr = analysis.get("rr_ratio", 0)
         if rr > best_rr:
