@@ -31,6 +31,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+# ── Path fix: ensure trading-bot/ is on sys.path regardless of CWD ────────────
+# Claude Desktop runs the script with its own CWD, so local packages
+# (analysis/, ai/, etc.) would not be found without this.
+_ROOT = Path(__file__).parent.resolve()
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
 from mcp.server.fastmcp import FastMCP
 
 from analysis.market_data import get_all_timeframes, get_ohlcv, invalidate_cache

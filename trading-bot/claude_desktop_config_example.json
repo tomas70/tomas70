@@ -1,12 +1,13 @@
 {
-  "_comment": "Pridėk šį bloką į savo Claude Desktop konfigūracijos failą.",
-  "_config_path_mac":     "~/Library/Application Support/Claude/claude_desktop_config.json",
-  "_config_path_windows": "%APPDATA%\\Claude\\claude_desktop_config.json",
+  "_comment_1": "Pridėk šį bloką į savo claude_desktop_config.json",
+  "_comment_2": "Mac:     ~/Library/Application Support/Claude/claude_desktop_config.json",
+  "_comment_3": "Windows: %APPDATA%\\Claude\\claude_desktop_config.json",
+  "_comment_4": "Po pakeitimų — iš naujo paleisk Claude Desktop",
 
   "mcpServers": {
     "trading-bot": {
-      "command": "python",
-      "args": ["/ABSOLUTE/PATH/TO/trading-bot/mcp_server.py"],
+      "command": "/bin/bash",
+      "args": ["/Users/tomassipelis/trading-bot/run_mcp.sh"],
       "env": {
         "TELEGRAM_BOT_TOKEN": "1234567890:AAF...",
         "TELEGRAM_CHAT_ID":   "-100123456789"
