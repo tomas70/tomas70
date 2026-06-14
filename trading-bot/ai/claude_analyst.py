@@ -62,12 +62,18 @@ def build_analysis_context(analysis: dict, position: dict) -> str:
 
     ob       = analysis.get("order_block")
     fvg      = analysis.get("fvg")
-    hook     = analysis.get("ross_hook", {})
-    struct   = analysis.get("structure_4h", {})
-    pd_info  = analysis.get("pd_zone", {})
+    hook     = analysis.get("ross_hook", {}) or {}
+    struct   = analysis.get("structure_4h", {}) or {}
+    pd_info  = analysis.get("pd_zone", {}) or {}
 
-    ob_range    = f"${ob.low:,.4f} – ${ob.high:,.4f}" if ob else "N/A"
-    fvg_status  = f"${fvg.bottom:,.4f} – ${fvg.top:,.4f} (neužpildytas)" if fvg else "nėra"
+    # ob/fvg can be dataclass instances (main.py flow) or plain dicts (MCP flow)
+    def _v(obj, key, default=None):
+        if obj is None:
+            return default
+        return obj.get(key, default) if isinstance(obj, dict) else getattr(obj, key, default)
+
+    ob_range   = f"${_v(ob,'low',0):,.4f} – ${_v(ob,'high',0):,.4f}" if ob else "N/A"
+    fvg_status = f"${_v(fvg,'bottom',0):,.4f} – ${_v(fvg,'top',0):,.4f} (neužpildytas)" if fvg else "nėra"
     hook_ago    = hook.get("candles_ago", 0)
     bos_label   = "CHoCH" if struct.get("is_choch") else "BOS"
     pd_zone     = pd_info.get("zone", "?").upper()

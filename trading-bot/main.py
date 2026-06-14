@@ -205,17 +205,17 @@ def main() -> None:
 
     scan_markets()  # immediate first scan
 
-    # Scheduler thread — scans every 15 min
-    schedule.every(SCAN_INTERVAL_MINUTES).minutes.do(scan_markets)
-    scheduler_thread = threading.Thread(
-        target=lambda: [schedule.run_pending() or time.sleep(60)
-                        for _ in iter(int, 1)],
-        daemon=True,
-        name="scheduler",
-    )
-    scheduler_thread.start()
+    # Scheduler runs in its own thread — schedule setup must happen inside
+    # the same thread that calls run_pending() (thread safety).
+    def _scheduler_loop() -> None:
+        schedule.every(SCAN_INTERVAL_MINUTES).minutes.do(scan_markets)
+        while True:
+            schedule.run_pending()
+            time.sleep(60)
 
-    # Telegram command listener — blocks main thread
+    threading.Thread(target=_scheduler_loop, daemon=True, name="scheduler").start()
+
+    # Telegram command listener — blocks main thread (long polling)
     listen_for_commands(handle_command)
 
 

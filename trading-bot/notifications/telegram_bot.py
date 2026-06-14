@@ -41,8 +41,8 @@ def format_setup_message(
 
     ob        = setup.get("order_block")
     fvg       = setup.get("fvg")
-    hook      = setup.get("ross_hook", {})
-    struct    = setup.get("structure_4h", {})
+    hook      = setup.get("ross_hook") or {}
+    struct    = setup.get("structure_4h") or {}
     risk_usd  = setup.get("risk_usd", 0)
     pos_usd   = setup.get("position_usd", 0)
     leverage  = setup.get("leverage", 1)
@@ -50,11 +50,17 @@ def format_setup_message(
     level_num = level_info.get("level", 1)
     balance   = level_info.get("balance", 0)
 
-    bias_arrow  = "⬆️" if bias == "LONG" else "⬇️"
-    bos_label   = "CHoCH ✓" if struct.get("is_choch") else "BOS ✓"
-    fvg_label   = "Neužpildytas ✓" if fvg else "nėra"
-    hook_label  = f"15m ✓ (prieš {hook.get('candles_ago', 0)} žvakių)"
-    ob_range    = f"${ob.low:,.0f}–${ob.high:,.0f}" if ob else "N/A"
+    # ob/fvg may be dataclass instances (main.py) or plain dicts (MCP JSON)
+    def _v(obj, key, default=None):
+        if obj is None:
+            return default
+        return obj.get(key, default) if isinstance(obj, dict) else getattr(obj, key, default)
+
+    bias_arrow = "⬆️" if bias == "LONG" else "⬇️"
+    bos_label  = "CHoCH ✓" if struct.get("is_choch") else "BOS ✓"
+    fvg_label  = "Neužpildytas ✓" if fvg else "nėra"
+    hook_label = f"15m ✓ (prieš {hook.get('candles_ago', 0)} žvakių)"
+    ob_range   = f"${_v(ob,'low',0):,.0f}–${_v(ob,'high',0):,.0f}" if ob else "N/A"
 
     sl_sign  = "-" if bias == "LONG" else "+"
     tp1_sign = "+" if bias == "LONG" else "-"
