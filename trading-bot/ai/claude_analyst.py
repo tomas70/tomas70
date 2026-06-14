@@ -151,6 +151,9 @@ def generate_setup_standalone(
             messages=[{"role": "user", "content": context}],
         )
 
+        if not msg.content or not hasattr(msg.content[0], "text"):
+            logger.warning("Unexpected Claude response format")
+            return None
         text  = msg.content[0].text.strip()
         start = text.find("{")
         end   = text.rfind("}") + 1

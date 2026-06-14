@@ -292,7 +292,7 @@ def find_fvg(df: pd.DataFrame) -> list[FVG]:
         # Bullish FVG
         gap_bottom = highs[i - 1]
         gap_top    = lows[i + 1]
-        if gap_top > gap_bottom:
+        if gap_top > gap_bottom and gap_bottom > 0:
             size_pct = (gap_top - gap_bottom) / gap_bottom
             if size_pct >= FVG_MIN_GAP_PCT:
                 filled = any(
@@ -304,7 +304,7 @@ def find_fvg(df: pd.DataFrame) -> list[FVG]:
         # Bearish FVG
         gap_top    = lows[i - 1]
         gap_bottom = highs[i + 1]
-        if gap_top > gap_bottom:
+        if gap_top > gap_bottom and gap_bottom > 0:
             size_pct = (gap_top - gap_bottom) / gap_bottom
             if size_pct >= FVG_MIN_GAP_PCT:
                 filled = any(

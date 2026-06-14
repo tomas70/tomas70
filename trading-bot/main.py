@@ -25,7 +25,7 @@ import schedule
 import time
 
 from analysis.multi_timeframe import get_full_analysis
-from ai.claude_analyst import build_analysis_context, generate_setup_standalone
+from ai.claude_analyst import generate_setup_standalone
 from notifications.telegram_bot import format_setup_message, send_telegram
 from notifications.bot_commands import listen_for_commands
 from risk.position_sizer import get_current_level, get_position_summary

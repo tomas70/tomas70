@@ -129,6 +129,9 @@ def get_full_analysis(pair: str) -> dict:
     df_1h  = data["1h"]
     df_15m = data["15m"]
 
+    if df_4h.empty or df_1h.empty or df_15m.empty:
+        return {"valid": False, "reason": "Empty candle data from Binance"}
+
     current_price = float(df_15m["close"].iloc[-1])
 
     # ── 1. 4H Market Structure ────────────────────────────────────────────────
