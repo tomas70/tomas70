@@ -16,11 +16,13 @@ Usage:
 """
 import json
 import logging
+import os
 import sys
 import threading
 from datetime import datetime
 from pathlib import Path
 
+import fcntl
 import schedule
 import time
 
@@ -40,6 +42,29 @@ logger = logging.getLogger(__name__)
 
 TRADES_FILE = Path(__file__).parent / "logs" / "trades.json"
 LOGS_DIR    = Path(__file__).parent / "logs"
+_LOCK_FILE  = LOGS_DIR / "main.lock"
+_lock_fd    = None  # keep open to hold the lock
+
+
+# ─── Single-instance lock ─────────────────────────────────────────────────────
+
+def _acquire_lock() -> None:
+    """Prevent two main.py instances from running simultaneously."""
+    global _lock_fd
+    LOGS_DIR.mkdir(exist_ok=True)
+    _lock_fd = open(_LOCK_FILE, "w")
+    try:
+        fcntl.flock(_lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _lock_fd.write(str(os.getpid()))
+        _lock_fd.flush()
+    except BlockingIOError:
+        print(
+            "KLAIDA: main.py jau veikia (lock failas užrakintas).\n"
+            "Nužudyk seną procesą:\n"
+            "  pkill -9 -f main.py && sleep 35",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 
 # ─── Balance persistence ──────────────────────────────────────────────────────
@@ -210,6 +235,8 @@ def handle_command(command: str, args: list[str]) -> str:
 # ─── Entry point ──────────────────────────────────────────────────────────────
 
 def main() -> None:
+    _acquire_lock()  # exit immediately if another instance is running
+
     logger.info("Trading bot paleistas | auto scan kas %d min + Telegram komandos",
                 SCAN_INTERVAL_MINUTES)
 
