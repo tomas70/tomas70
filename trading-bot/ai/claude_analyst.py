@@ -7,8 +7,7 @@ AI analyst module — dual mode:
     SMC + Ross Hook expertise to decide confidence and skip/execute.
 
   Standalone mode (ANTHROPIC_API_KEY set):
-    generate_setup_standalone() calls Claude API directly and returns a
-    parsed decision dict.
+    generate_setup_standalone() calls Claude API directly.
 """
 import json
 import logging
@@ -17,11 +16,12 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-CLAUDE_MODEL     = os.getenv("CLAUDE_MODEL", "claude-opus-4-8")
+CLAUDE_MODEL      = os.getenv("CLAUDE_MODEL", "claude-opus-4-8")
 CLAUDE_MAX_TOKENS = 1024
 
 SYSTEM_PROMPT = """\
-Tu esi profesionalus crypto trader naudojantis SMC ir Ross Hook metodiką.
+Tu esi profesionalus crypto trader naudojantis Joe Ross metodiką (1-2-3, Ross Hook, TTE) \
+ir Smart Money Concepts (SMC) patvirtinimui.
 Gauni rinkos analizės duomenis ir grąžini TIKTAI JSON objektą (be jokio kito teksto).
 
 Privalomi laukai:
@@ -38,72 +38,91 @@ Privalomi laukai:
   "reasoning":    "trumpas pagrindimas"
 }
 
-Jei confidence < 7 arba setup'as silpnas — nustatyk "skip": true."""
+Jei confidence < 7 arba setup'as silpnas — nustatyk "skip": true.
+TTE įėjimas yra geresnis nei Hook įėjimas — vertink jį aukščiau."""
 
 
-# ─── Claude Desktop mode ──────────────────────────────────────────────────────
+# ─── Context Builder ──────────────────────────────────────────────────────────
 
 def build_analysis_context(analysis: dict, position: dict) -> str:
     """
-    Formats the full analysis + position data as structured readable text.
-    This is the string Claude Desktop sees as the MCP tool result — Claude
-    then applies its own reasoning to assign confidence and decide skip/execute.
+    Formats full analysis + position data as readable text for Claude Desktop.
     """
-    pair    = analysis.get("pair", "?")
-    bias    = analysis.get("bias", "?").upper()
-    price   = analysis.get("current_price", 0)
-    entry   = analysis.get("entry", 0)
-    sl      = analysis.get("sl", 0)
-    tp1     = analysis.get("tp1", 0)
-    tp2     = analysis.get("tp2", 0)
-    rr      = analysis.get("rr_ratio", 0)
-    sl_pct  = analysis.get("sl_pct", 0)
-    tp1_pct = analysis.get("tp1_pct", 0)
+    pair       = analysis.get("pair", "?")
+    bias       = analysis.get("bias", "?").upper()
+    price      = analysis.get("current_price", 0)
+    entry      = analysis.get("entry", 0)
+    sl         = analysis.get("sl", 0)
+    tp1        = analysis.get("tp1", 0)
+    tp2        = analysis.get("tp2", 0)
+    rr         = analysis.get("rr_ratio", 0)
+    sl_pct     = analysis.get("sl_pct", 0)
+    tp1_pct    = analysis.get("tp1_pct", 0)
+    entry_type = analysis.get("entry_type", "HOOK")
 
-    ob       = analysis.get("order_block")
-    fvg      = analysis.get("fvg")
-    hook     = analysis.get("ross_hook", {}) or {}
-    struct   = analysis.get("structure_4h", {}) or {}
-    pd_info  = analysis.get("pd_zone", {}) or {}
+    ob      = analysis.get("order_block")
+    fvg     = analysis.get("fvg")
+    hook    = analysis.get("ross_hook", {}) or {}
+    tte     = analysis.get("tte")
+    struct  = analysis.get("structure_4h", {}) or {}
+    pd_info = analysis.get("pd_zone", {}) or {}
 
-    # ob/fvg can be dataclass instances (main.py flow) or plain dicts (MCP flow)
+    # dict-safe accessor (handles both dataclass instances and plain dicts)
     def _v(obj, key, default=None):
         if obj is None:
             return default
         return obj.get(key, default) if isinstance(obj, dict) else getattr(obj, key, default)
 
     ob_range   = f"${_v(ob,'low',0):,.4f} – ${_v(ob,'high',0):,.4f}" if ob else "N/A"
-    fvg_status = f"${_v(fvg,'bottom',0):,.4f} – ${_v(fvg,'top',0):,.4f} (neužpildytas)" if fvg else "nėra"
-    hook_ago    = hook.get("candles_ago", 0)
-    bos_label   = "CHoCH" if struct.get("is_choch") else "BOS"
-    pd_zone     = pd_info.get("zone", "?").upper()
-    fib_pct     = (pd_info.get("fib_pct") or 0) * 100
+    fvg_status = (
+        f"${_v(fvg,'bottom',0):,.4f} – ${_v(fvg,'top',0):,.4f} (neužpildytas)"
+        if fvg else "nėra (tik OB)"
+    )
+    hook_ago  = hook.get("candles_ago", 0)
+    bos_label = "CHoCH" if struct.get("is_choch") else "BOS"
+    pd_zone   = pd_info.get("zone", "?").upper()
+    fib_pct   = (pd_info.get("fib_pct") or 0) * 100
 
-    level       = position.get("level", 1)
-    risk_usd    = position.get("risk_usd", 0)
-    pos_usd     = position.get("position_usd", 0)
-    leverage    = position.get("leverage", 1)
-    margin_usd  = position.get("margin_usd", 0)
-    margin_ok   = position.get("margin_ok", True)
-    remaining   = position.get("remaining_profit", 0)
+    if tte:
+        tte_line    = (
+            f"  TTE įėjimas: ${_v(tte,'tte_entry',entry):,.4f}  "
+            f"(signalas @ baro {_v(tte,'tte_bar_index','?')})"
+        )
+        tte_sl_line = f"  TTE SL:      ${_v(tte,'tte_sl',sl):,.4f}  (korekcijos žemuma)"
+        entry_label = "TTE (Trader's Trick Entry)"
+    else:
+        tte_line    = "  TTE:         dar nesusiformavęs — laukiama signalo baro"
+        tte_sl_line = f"  SL (Hook):   ${sl:,.4f}  (OB riba)"
+        entry_label = "HOOK (klasikinis)"
+
+    level      = position.get("level", 1)
+    risk_usd   = position.get("risk_usd", 0)
+    pos_usd    = position.get("position_usd", 0)
+    leverage   = position.get("leverage", 1)
+    margin_usd = position.get("margin_usd", 0)
+    margin_ok  = position.get("margin_ok", True)
+    remaining  = position.get("remaining_profit", 0)
 
     lines = [
-        f"╔══ SMC + ROSS HOOK ANALIZĖ: {pair} ══╗",
+        f"╔══ JOE ROSS + SMC ANALIZĖ: {pair} ══╗",
         f"",
-        f"  Kaina dabar:  ${price:>12,.4f}",
-        f"  Kryptis (4H): {bias}",
-        f"  {bos_label} patvirtintas: ✓",
-        f"  PD zona:      {pd_zone} (Fib {fib_pct:.1f}%)",
+        f"  Kaina dabar:   ${price:>12,.4f}",
+        f"  Kryptis (4H):  {bias}  [{bos_label} patvirtintas]",
+        f"  PD zona:       {pd_zone}  (Fib {fib_pct:.1f}%)",
         f"",
-        f"  ── SMC STRUKTŪRA (4H / 1H) ──",
-        f"  Order Block:  {ob_range}",
-        f"  FVG:          {fvg_status}",
-        f"  FVG ↔ OB overlap: ✓",
+        f"  ── JOE ROSS 1-2-3 + HOOK (15m) ──",
+        f"  Hook lygis:    ${hook.get('hook_level', 0):,.4f}",
+        f"  Susiformavo:   prieš {hook_ago} žvakių",
+        f"  Kryptis:       {hook.get('pattern','?').upper()}  ✓",
         f"",
-        f"  ── ROSS HOOK (15m) ──",
-        f"  Hook lygis:   ${entry:,.4f}",
-        f"  Susiformavo:  prieš {hook_ago} žvakių",
-        f"  Kryptis:      {hook.get('pattern', '?').upper()}  ✓",
+        f"  ── TRADER'S TRICK ENTRY (TTE) ──",
+        tte_line,
+        tte_sl_line,
+        f"  Įėjimo tipas:  {entry_label}",
+        f"",
+        f"  ── SMC PATVIRTINIMAS (1H) ──",
+        f"  Order Block:   {ob_range}",
+        f"  FVG:           {fvg_status}",
         f"",
         f"  ── TRADE PARAMETRAI ──",
         f"  Entry:  ${entry:>12,.4f}",
@@ -119,7 +138,7 @@ def build_analysis_context(analysis: dict, position: dict) -> str:
         f"  Margin:   ${margin_usd:.2f}  {'✓' if margin_ok else '⚠️ viršija balansą'}",
         f"  Iki kito lygio: ${remaining:.2f}",
         f"",
-        f"╚{'═' * 40}╝",
+        f"╚{'═' * 42}╝",
     ]
     return "\n".join(lines)
 
@@ -133,14 +152,13 @@ def generate_setup_standalone(
     """
     Calls Claude API directly when ANTHROPIC_API_KEY is set.
     Returns parsed decision dict or None if key unavailable / call fails.
-    Used in main.py standalone scheduler mode.
     """
     api_key = os.getenv("ANTHROPIC_API_KEY") or ""
     if not api_key:
         return None
 
     try:
-        import anthropic  # optional dependency
+        import anthropic
         client  = anthropic.Anthropic(api_key=api_key)
         context = build_analysis_context(analysis, position)
 
@@ -154,6 +172,7 @@ def generate_setup_standalone(
         if not msg.content or not hasattr(msg.content[0], "text"):
             logger.warning("Unexpected Claude response format")
             return None
+
         text  = msg.content[0].text.strip()
         start = text.find("{")
         end   = text.rfind("}") + 1

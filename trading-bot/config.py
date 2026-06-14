@@ -4,18 +4,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ── Optional credentials ──────────────────────────────────────────────────────
-# Telegram: only needed to receive setup notifications
 TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID:   str = os.getenv("TELEGRAM_CHAT_ID",   "")
 
 # Anthropic API key: only needed for standalone mode (without Claude Desktop)
-# When running as MCP server inside Claude Desktop, leave this empty.
 ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
 
-# Market data comes from Binance public REST endpoints — no API key required.
-
-# Trading pairs
-PAIRS: list[str] = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]
+# Trading pairs — Hyperliquid perpetual futures (coin symbol only, no USDT suffix)
+PAIRS: list[str] = ["BTC", "ETH", "SOL", "BNB", "XRP"]
 
 # Timeframes
 TIMEFRAMES: list[str] = ["15m", "1h", "4h"]
@@ -24,12 +20,12 @@ TIMEFRAMES: list[str] = ["15m", "1h", "4h"]
 CANDLES_LIMIT: int = 200
 SCAN_INTERVAL_MINUTES: int = 15
 
-# Risk management (hardcoded, cannot be changed by user)
+# Risk management (hardcoded)
 RISK_PERCENTAGE: float = 0.30       # 30% of balance per trade
 MIN_RR_RATIO: float = 3.0           # Minimum Risk:Reward ratio
-LEVERAGE: int = 5                   # Max leverage on Evedex
-MAX_OPEN_POSITIONS: int = 1         # Only 1 trade at a time
-MIN_CONFIDENCE_SCORE: int = 7       # Minimum AI confidence to send signal
+LEVERAGE: int = 5                   # Max leverage
+MAX_OPEN_POSITIONS: int = 1
+MIN_CONFIDENCE_SCORE: int = 7
 
 # Challenge levels table: $20 → $40,000 over 30 levels
 CHALLENGE_LEVELS: list[dict] = [
