@@ -95,8 +95,9 @@ def scan_markets(silent: bool = False) -> str:
             continue
 
         if not analysis.get("valid"):
-            logger.debug("%s: %s", pair, analysis.get("reason"))
-            checked.append(f"{pair}: ❌ {analysis.get('reason', '?')[:40]}")
+            reason = analysis.get("reason", "?")
+            logger.debug("%s: %s", pair, reason)
+            checked.append(f"{pair}: ❌ {reason}")
             continue
 
         try:
@@ -130,7 +131,16 @@ def scan_markets(silent: bool = False) -> str:
         return f"✅ Setup rastas ir išsiųstas: <b>{best_setup['pair']}</b> RR=1:{best_rr:.1f}"
     else:
         logger.info("Nėra tinkamų setup'ų.")
-        return "🔍 Skenuota. Šiuo metu nėra tinkamų setup'ų. FLAT.\n\n" + "\n".join(checked)
+        # Group reasons for compact display
+        reasons: dict[str, list[str]] = {}
+        for line in checked:
+            pair_part, _, reason_part = line.partition(": ❌ ")
+            reasons.setdefault(reason_part, []).append(pair_part)
+        summary = "\n".join(
+            f"❌ {reason}: {', '.join(pairs)}"
+            for reason, pairs in reasons.items()
+        )
+        return f"🔍 Skenuota {len(PAIRS)} porų. Nėra setup'ų. FLAT.\n\n{summary}"
 
 
 # ─── Telegram command handler ─────────────────────────────────────────────────

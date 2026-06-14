@@ -10,8 +10,17 @@ TELEGRAM_CHAT_ID:   str = os.getenv("TELEGRAM_CHAT_ID",   "")
 # Anthropic API key: only needed for standalone mode (without Claude Desktop)
 ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
 
-# Trading pairs — Hyperliquid perpetual futures (coin symbol only, no USDT suffix)
-PAIRS: list[str] = ["BTC", "ETH", "SOL", "BNB", "XRP"]
+# Trading pairs — Hyperliquid perpetual futures (coin symbol only)
+# Selected for: high Hyperliquid volume + TradFi presence (CME/ETF/institutional)
+PAIRS: list[str] = [
+    # Tier 1 — CME futures + ETF (IBIT, FBTC, ETHA...)
+    "BTC", "ETH", "SOL", "BNB", "XRP",
+    # Tier 2 — institutional + regulated, high open interest
+    "DOGE", "AVAX", "LINK", "ADA", "DOT",
+    "LTC", "BCH", "ATOM", "NEAR", "SUI",
+    # Tier 3 — major DeFi + L2 + ecosystem
+    "APT", "ARB", "OP", "TON", "UNI",
+]
 
 # Timeframes
 TIMEFRAMES: list[str] = ["15m", "1h", "4h"]
