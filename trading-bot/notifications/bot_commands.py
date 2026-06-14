@@ -30,8 +30,14 @@ def _get_updates(token: str, offset: int) -> list[dict]:
     try:
         with httpx.Client(timeout=POLL_TIMEOUT + 5) as client:
             resp = client.get(url, params={"offset": offset, "timeout": POLL_TIMEOUT})
+        if resp.status_code == 409:
+            # Another bot instance is polling — wait for it to release the connection
+            logger.warning("Telegram 409 Conflict: kitas main.py procesas veikia. Laukiama 60s...")
+            time.sleep(60)
+            return []
         if resp.is_success:
             return resp.json().get("result", [])
+        logger.debug("Poll HTTP %s", resp.status_code)
     except Exception as exc:
         logger.debug("Poll error: %s", exc)
     return []
@@ -98,4 +104,4 @@ def listen_for_commands(on_command: Callable[[str, list[str]], str]) -> None:
                 _send(token, chat_id, reply)
 
         if not updates:
-            time.sleep(0.5)
+            time.sleep(1)
