@@ -34,7 +34,9 @@ curl -fsSL "$BASE/notifications/bot_commands.py"  -o "$DIR/notifications/bot_com
 curl -fsSL "$BASE/risk/__init__.py"            -o "$DIR/risk/__init__.py"
 curl -fsSL "$BASE/risk/position_sizer.py"      -o "$DIR/risk/position_sizer.py"
 
-chmod +x "$DIR/run_mcp.sh" "$DIR/run_main.sh"
+curl -fsSL "$BASE/setup_autostart.sh"           -o "$DIR/setup_autostart.sh"
+
+chmod +x "$DIR/run_mcp.sh" "$DIR/run_main.sh" "$DIR/setup_autostart.sh"
 
 echo "✅ Visi failai atnaujinti!"
 echo "   .env failas NEPALIESTAS — tavo API raktai saugūs."
