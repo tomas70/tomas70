@@ -57,7 +57,18 @@ def diagnose(pair: str) -> None:
         return
     nearest_ob = _find_nearest_ob(active_obs, current_price, bias)
     if nearest_ob is None:
-        print(f"{pair:6} | hook={hook_bias:7} 4H={bias_4h:7} | ❌ price not near OB ({len(active_obs)} OBs exist)")
+        closest_dist_pct = min(
+            (
+                (ob.low - current_price) / current_price * 100 if current_price < ob.low
+                else (current_price - ob.high) / current_price * 100 if current_price > ob.high
+                else 0.0
+            )
+            for ob in active_obs
+        )
+        print(
+            f"{pair:6} | hook={hook_bias:7} 4H={bias_4h:7} | ❌ price not near OB "
+            f"({len(active_obs)} OBs exist, closest is {closest_dist_pct:.2f}% away, need <=2%)"
+        )
         return
 
     swing_highs = structure_4h.get("swing_highs", [])
