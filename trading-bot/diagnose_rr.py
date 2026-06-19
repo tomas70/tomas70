@@ -2,7 +2,7 @@
 Diagnostics: shows what RR_ratio each pair WOULD have if it passed all
 other gates, without enforcing MIN_RR_RATIO. Helps decide whether to
 lower MIN_RR_RATIO from 3.0, and identifies which gate is the real
-bottleneck (Hook / 4H bias / PD zone) for each pair. OB/FVG are reported
+bottleneck (Hook / 4H bias) for each pair. OB/FVG/PD-zone are reported
 as confluence info only — they're bonus confirmation, not hard gates.
 
 Usage (on the Mac where the bot runs):
@@ -65,23 +65,12 @@ def diagnose(pair: str) -> None:
     ob_label  = "OB✓" if nearest_ob else "OB✗"
     fvg_label = "FVG✓" if confluence_fvg else "FVG✗"
 
+    # PD zone: confluence info only, not a hard gate (conflicts with Ross
+    # Hook's continuation nature — see multi_timeframe.py docstring)
     swing_highs = structure_4h.get("swing_highs", [])
     swing_lows = structure_4h.get("swing_lows", [])
     if swing_highs and swing_lows:
-        last_high, last_low = swing_highs[-1], swing_lows[-1]
-        last_4h_i = len(df_4h) - 1
-        pd_info = get_pd_zone(last_high.price, last_low.price, current_price)
-        debug_pd = (
-            f"[high={last_high.price:.4f}@{last_4h_i - last_high.index}candles_ago "
-            f"low={last_low.price:.4f}@{last_4h_i - last_low.index}candles_ago "
-            f"eq={pd_info['equilibrium']:.4f} fib={pd_info['fib_pct']:.2f} price={current_price:.4f}]"
-        )
-        if bias == "bullish" and pd_info["zone"] == "premium":
-            print(f"{pair:6} | hook={hook_bias:7} 4H={bias_4h:7} {ob_label} {fvg_label} | ❌ premium zone (need discount) {debug_pd}")
-            return
-        if bias == "bearish" and pd_info["zone"] == "discount":
-            print(f"{pair:6} | hook={hook_bias:7} 4H={bias_4h:7} {ob_label} {fvg_label} | ❌ discount zone (need premium) {debug_pd}")
-            return
+        pd_info = get_pd_zone(swing_highs[-1].price, swing_lows[-1].price, current_price)
     else:
         pd_info = {"zone": "unknown"}
 
@@ -115,4 +104,4 @@ if __name__ == "__main__":
     for pair in PAIRS:
         diagnose(pair)
 
-    print("\nLegend: ✅ RR>=3.0  🟡 RR>=2.0  🔴 RR<2.0  |  OB/FVG = bonus confluence, not a gate")
+    print("\nLegend: ✅ RR>=3.0  🟡 RR>=2.0  🔴 RR<2.0  |  OB/FVG/PD = bonus confluence, not a gate")

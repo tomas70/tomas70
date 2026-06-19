@@ -7,13 +7,18 @@ Logic flow:
   4H   → BOS/CHoCH market structure bias               [DIRECTION FILTER]
   1H   → Order Block near the hook/TTE area            [SMC CONFLUENCE — bonus]
   1H   → Fair Value Gap overlap                        [SMC CONFLUENCE — bonus]
-  4H   → Premium/Discount Fibonacci zone               [ZONE FILTER]
+  4H   → Premium/Discount Fibonacci zone               [CONTEXT — bonus]
   All  → R:R ≥ MIN_RR_RATIO                            [RISK FILTER]
 
-OB/FVG are confirmation, not the primary signal — they raise confidence in
-a Hook+TTE setup but don't block a trade on their own. SL without a TTE
-signal falls back to the hook's own P2 invalidation level (Joe Ross rule),
-not an OB boundary, so a valid Hook setup never depends on SMC presence.
+OB/FVG/PD-zone are confirmation, not the primary signal — they raise
+confidence in a Hook+TTE setup but don't block a trade on their own. A Ross
+Hook is a continuation pattern (it breaks out and keeps going), which
+conflicts with PD zone theory's mean-reversion assumption (e.g. a bearish
+continuation hook is almost always still in "discount", since it's making
+fresh new lows) — so PD zone is reported for context, not enforced as a
+gate. SL without a TTE signal falls back to the hook's own P2 invalidation
+level (Joe Ross rule), not an OB boundary, so a valid Hook setup never
+depends on SMC presence.
 """
 import logging
 from typing import Optional
@@ -119,13 +124,12 @@ def get_full_analysis(pair: str) -> dict:
     Primary: 15m Ross Hook (Joe Ross 1-2-3 + breakout + hook).
     Entry:   TTE (Trader's Trick Entry) — first up/down bar in the correction,
              enter at that bar's high/low BEFORE the hook level is broken.
-    SMC:     1H OB / FVG near the hook area are confluence — they raise
-             confidence but are not required for a setup to be valid.
+    SMC:     1H OB / FVG / 4H PD-zone are confluence — they raise confidence
+             but are not required for a setup to be valid.
 
     Gates (all must pass):
       ✓ 15m Ross Hook formed and not stale
       ✓ 4H market structure bias matches hook direction
-      ✓ Price in discount (long) or premium (short) zone on 4H range
       ✓ R:R ≥ MIN_RR_RATIO
 
     Entry source:
@@ -182,16 +186,18 @@ def get_full_analysis(pair: str) -> dict:
     fvgs_1h        = [f for f in find_fvg(df_1h) if not f.filled and f.kind == bias]
     confluence_fvg = _find_fvg_near_ob(fvgs_1h, nearest_ob) if nearest_ob else None
 
-    # ── Gate 4: Premium / Discount Zone ──────────────────────────────────────
+    # ── Premium / Discount Zone (confluence info — bonus, not a hard gate) ────
+    # PD theory assumes a mean-reversion retracement entry (short the premium
+    # before a drop, buy the discount before a rally). A Ross Hook is a
+    # continuation pattern — it breaks out and keeps going, so a real bearish
+    # continuation hook is almost always still in "discount" (fresh new lows)
+    # and would never satisfy a hard "need premium" requirement. Reported for
+    # context only.
     swing_highs = structure_4h.get("swing_highs", [])
     swing_lows  = structure_4h.get("swing_lows",  [])
 
     if swing_highs and swing_lows:
         pd_info = get_pd_zone(swing_highs[-1].price, swing_lows[-1].price, current_price)
-        if bias == "bullish" and pd_info["zone"] == "premium":
-            return {"valid": False, "reason": "Price in premium zone — need discount for long"}
-        if bias == "bearish" and pd_info["zone"] == "discount":
-            return {"valid": False, "reason": "Price in discount zone — need premium for short"}
     else:
         pd_info = {"zone": "unknown", "equilibrium": 0.0, "fib_pct": 0.0}
 
