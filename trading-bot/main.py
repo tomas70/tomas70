@@ -138,7 +138,12 @@ def scan_markets(silent: bool = False) -> str:
                 logger.info("%s: AI praleido", pair)
                 continue
         else:
-            decision = {"confidence": 0, "reasoning": "Auto: 5/5 confluence ✓"}
+            ob_conf  = "OB✓" if analysis.get("order_block") else "OB✗"
+            fvg_conf = "FVG✓" if analysis.get("fvg") else "FVG✗"
+            decision = {
+                "confidence": 0,
+                "reasoning": f"Auto: Hook+4H+PD+RR ✓ ({ob_conf} {fvg_conf} bonus)",
+            }
 
         rr = analysis.get("rr_ratio", 0)
         checked.append(f"{pair}: ✅ RR={rr:.1f}")

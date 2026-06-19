@@ -5,10 +5,15 @@ Logic flow:
   15m  → Ross Hook (1-2-3 pattern + breakout + hook)  [PRIMARY SIGNAL]
   15m  → TTE entry bar (Trader's Trick Entry)          [ENTRY LEVEL]
   4H   → BOS/CHoCH market structure bias               [DIRECTION FILTER]
-  1H   → Order Block zone near the hook/TTE area       [SMC CONFIRMATION]
-  1H   → Fair Value Gap overlap (bonus confirmation)
+  1H   → Order Block near the hook/TTE area            [SMC CONFLUENCE — bonus]
+  1H   → Fair Value Gap overlap                        [SMC CONFLUENCE — bonus]
   4H   → Premium/Discount Fibonacci zone               [ZONE FILTER]
   All  → R:R ≥ MIN_RR_RATIO                            [RISK FILTER]
+
+OB/FVG are confirmation, not the primary signal — they raise confidence in
+a Hook+TTE setup but don't block a trade on their own. SL without a TTE
+signal falls back to the hook's own P2 invalidation level (Joe Ross rule),
+not an OB boundary, so a valid Hook setup never depends on SMC presence.
 """
 import logging
 from typing import Optional
@@ -114,19 +119,19 @@ def get_full_analysis(pair: str) -> dict:
     Primary: 15m Ross Hook (Joe Ross 1-2-3 + breakout + hook).
     Entry:   TTE (Trader's Trick Entry) — first up/down bar in the correction,
              enter at that bar's high/low BEFORE the hook level is broken.
-    SMC:     4H bias + 1H OB must confirm the direction.
-             1H FVG overlap = bonus confluence (not hard gate).
+    SMC:     1H OB / FVG near the hook area are confluence — they raise
+             confidence but are not required for a setup to be valid.
 
     Gates (all must pass):
       ✓ 15m Ross Hook formed and not stale
       ✓ 4H market structure bias matches hook direction
-      ✓ Active 1H OB near current price, aligned with bias
       ✓ Price in discount (long) or premium (short) zone on 4H range
       ✓ R:R ≥ MIN_RR_RATIO
 
     Entry source:
-      TTE signal found  → use TTE entry/SL (earlier, better R:R)
-      TTE pending       → use hook_level as entry, OB-derived SL
+      TTE signal found     → use TTE entry/SL (earlier, better R:R, Joe Ross rule)
+      TTE pending, OB near → use hook_level as entry, OB-derived SL
+      TTE pending, no OB   → use hook_level as entry, SL at hook's P2 level
     """
     # ── Data Fetch ────────────────────────────────────────────────────────────
     try:
@@ -167,21 +172,15 @@ def get_full_analysis(pair: str) -> dict:
 
     bias = hook_bias  # confirmed direction
 
-    # ── Gate 3: 1H Order Block (SMC confirmation) ─────────────────────────────
+    # ── 1H Order Block + FVG (SMC confluence — bonus, not a hard gate) ────────
     obs_1h     = find_order_blocks(df_1h, bias)
     active_obs = [ob for ob in obs_1h if not ob.mitigated]
 
-    if not active_obs:
-        return {"valid": False, "reason": f"No active {bias} OBs on 1H"}
-
     atr_1h     = calculate_atr(df_1h)
-    nearest_ob = _find_nearest_ob(active_obs, current_price, bias, atr_1h)
-    if nearest_ob is None:
-        return {"valid": False, "reason": "Price not in or near any active 1H OB zone"}
+    nearest_ob = _find_nearest_ob(active_obs, current_price, bias, atr_1h) if active_obs else None
 
-    # ── FVG confluence (bonus — not a hard gate) ──────────────────────────────
     fvgs_1h        = [f for f in find_fvg(df_1h) if not f.filled and f.kind == bias]
-    confluence_fvg = _find_fvg_near_ob(fvgs_1h, nearest_ob)
+    confluence_fvg = _find_fvg_near_ob(fvgs_1h, nearest_ob) if nearest_ob else None
 
     # ── Gate 4: Premium / Discount Zone ──────────────────────────────────────
     swing_highs = structure_4h.get("swing_highs", [])
@@ -204,13 +203,21 @@ def get_full_analysis(pair: str) -> dict:
         entry      = tte["tte_entry"]
         sl         = tte["tte_sl"]
         entry_type = "TTE"
-    else:
-        # Fallback: classic hook-level entry with OB-derived SL
+    elif nearest_ob is not None:
+        # Fallback: classic hook-level entry with OB-derived SL (when an OB
+        # confluence zone is available)
         entry = hook["hook_level"]
         sl    = (
             nearest_ob.low  * (1 - SL_BUFFER_PCT) if bias == "bullish"
             else nearest_ob.high * (1 + SL_BUFFER_PCT)
         )
+        entry_type = "HOOK"
+    else:
+        # Fallback: classic hook-level entry, SL at the hook's own P2
+        # invalidation level (Joe Ross rule) — no OB confluence required
+        entry = hook["hook_level"]
+        p2    = hook["p2"].price
+        sl    = p2 * (1 - SL_BUFFER_PCT) if bias == "bullish" else p2 * (1 + SL_BUFFER_PCT)
         entry_type = "HOOK"
 
     # ── Gate 5: R:R Check ─────────────────────────────────────────────────────
