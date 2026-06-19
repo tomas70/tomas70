@@ -38,6 +38,10 @@ logger = logging.getLogger(__name__)
 OB_PROXIMITY_ATR_MULT = 2.0
 # Fallback SL buffer when using hook-level entry (no TTE)
 SL_BUFFER_PCT    = 0.003
+# TP1 swing older than this (in 4H candles, ~3.3 days) is still used as the
+# target but flagged stale — a level set further back in time is more
+# likely to have already been tested/invalidated by intervening price action.
+TP1_STALE_AGE_4H = 20
 
 
 # ─── Internal Helpers ─────────────────────────────────────────────────────────
@@ -77,17 +81,30 @@ def _tp_targets(
     entry: float,
     swing_highs: list[SwingPoint],
     swing_lows: list[SwingPoint],
-) -> tuple[float, float]:
-    """Derive TP1 / TP2 from the nearest 4H structural swing levels beyond entry."""
+    last_index_4h: int,
+) -> dict:
+    """
+    Derive TP1 / TP2 from the nearest 4H structural swing levels beyond entry.
+
+    Falls back to a flat % target when no swing lies beyond entry — flagged
+    via tp1_structural=False so callers can warn that the level isn't backed
+    by real 4H structure (and a high R:R off it is more speculative).
+    """
     if bias == "bullish":
-        above = sorted(sp.price for sp in swing_highs if sp.price > entry)
-        tp1 = above[0] if len(above) > 0 else round(entry * 1.03, 8)
-        tp2 = above[1] if len(above) > 1 else round(entry * 1.06, 8)
+        above  = sorted((sp for sp in swing_highs if sp.price > entry), key=lambda sp: sp.price)
+        tp1_sp = above[0] if above else None
+        tp2    = above[1].price if len(above) > 1 else round(entry * 1.06, 8)
+        fallback_tp1 = round(entry * 1.03, 8)
     else:
-        below = sorted((sp.price for sp in swing_lows if sp.price < entry), reverse=True)
-        tp1 = below[0] if len(below) > 0 else round(entry * 0.97, 8)
-        tp2 = below[1] if len(below) > 1 else round(entry * 0.94, 8)
-    return tp1, tp2
+        below  = sorted((sp for sp in swing_lows if sp.price < entry), key=lambda sp: sp.price, reverse=True)
+        tp1_sp = below[0] if below else None
+        tp2    = below[1].price if len(below) > 1 else round(entry * 0.94, 8)
+        fallback_tp1 = round(entry * 0.97, 8)
+
+    tp1     = tp1_sp.price if tp1_sp else fallback_tp1
+    tp1_age = (last_index_4h - tp1_sp.index) if tp1_sp else None
+
+    return {"tp1": tp1, "tp2": tp2, "tp1_age": tp1_age, "tp1_structural": tp1_sp is not None}
 
 
 def _build_levels(
@@ -96,22 +113,27 @@ def _build_levels(
     sl: float,
     swing_highs: list[SwingPoint],
     swing_lows: list[SwingPoint],
+    last_index_4h: int,
 ) -> dict:
     """Calculate TP1, TP2, R:R, and distance percentages from entry/SL."""
-    tp1, tp2 = _tp_targets(bias, entry, swing_highs, swing_lows)
+    tp_info = _tp_targets(bias, entry, swing_highs, swing_lows, last_index_4h)
+    tp1, tp2 = tp_info["tp1"], tp_info["tp2"]
 
     sl_dist  = abs(entry - sl)
     tp1_dist = abs(tp1 - entry)
     rr_ratio = round(tp1_dist / sl_dist, 2) if sl_dist > 0 else 0.0
 
     return {
-        "entry":    round(entry, 8),
-        "sl":       round(sl, 8),
-        "tp1":      round(tp1, 8),
-        "tp2":      round(tp2, 8),
-        "rr_ratio": rr_ratio,
-        "sl_pct":   round(sl_dist / entry * 100, 3),
-        "tp1_pct":  round(tp1_dist / entry * 100, 3),
+        "entry":          round(entry, 8),
+        "sl":             round(sl, 8),
+        "tp1":            round(tp1, 8),
+        "tp2":            round(tp2, 8),
+        "rr_ratio":       rr_ratio,
+        "sl_pct":         round(sl_dist / entry * 100, 3),
+        "tp1_pct":        round(tp1_dist / entry * 100, 3),
+        "tp1_structural": tp_info["tp1_structural"],
+        "tp1_age_4h":     tp_info["tp1_age"],
+        "tp1_stale":      tp_info["tp1_age"] is not None and tp_info["tp1_age"] > TP1_STALE_AGE_4H,
     }
 
 
@@ -227,7 +249,7 @@ def get_full_analysis(pair: str) -> dict:
         entry_type = "HOOK"
 
     # ── Gate 5: R:R Check ─────────────────────────────────────────────────────
-    levels = _build_levels(bias, entry, sl, swing_highs, swing_lows)
+    levels = _build_levels(bias, entry, sl, swing_highs, swing_lows, len(df_4h) - 1)
 
     if levels["rr_ratio"] < MIN_RR_RATIO:
         return {

@@ -88,13 +88,19 @@ def diagnose(pair: str) -> None:
         sl = p2 * (1 - SL_BUFFER_PCT) if bias == "bullish" else p2 * (1 + SL_BUFFER_PCT)
         entry_type = "HOOK(P2)"
 
-    levels = _build_levels(bias, entry, sl, swing_highs, swing_lows)
+    levels = _build_levels(bias, entry, sl, swing_highs, swing_lows, len(df_4h) - 1)
     rr = levels["rr_ratio"]
+
+    if levels["tp1_structural"]:
+        age = levels["tp1_age_4h"]
+        tp1_label = f"tp1_age={age}c" + ("⚠️stale" if levels["tp1_stale"] else "")
+    else:
+        tp1_label = "tp1=fallback%⚠️"
 
     flag = "✅" if rr >= 3.0 else ("🟡" if rr >= 2.0 else "🔴")
     print(
         f"{pair:6} | hook={hook_bias:7} 4H={bias_4h:7} {ob_label} {fvg_label} pd={pd_info['zone']:11} "
-        f"| {entry_type:8} entry={entry:.4f} sl={sl:.4f} | RR={rr:.2f} {flag}"
+        f"| {entry_type:8} entry={entry:.4f} sl={sl:.4f} | RR={rr:.2f} {flag} | {tp1_label}"
     )
 
 
@@ -105,3 +111,5 @@ if __name__ == "__main__":
         diagnose(pair)
 
     print("\nLegend: ✅ RR>=3.0  🟡 RR>=2.0  🔴 RR<2.0  |  OB/FVG/PD = bonus confluence, not a gate")
+    print("        tp1_age = candles since the 4H swing used for TP1 (⚠️stale if > 20 candles ~3.3d)")
+    print("        tp1=fallback% = no 4H swing beyond entry, TP1 is a flat % guess — RR is speculative")

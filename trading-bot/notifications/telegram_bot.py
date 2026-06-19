@@ -49,8 +49,17 @@ def format_setup_message(
     pos_usd   = setup.get("position_usd", 0)
     leverage  = setup.get("leverage", 1)
 
+    tp1_structural = setup.get("tp1_structural", True)
+    tp1_stale      = setup.get("tp1_stale", False)
+    tp1_age        = setup.get("tp1_age_4h")
+
     level_num = level_info.get("level", 1)
     balance   = level_info.get("balance", 0)
+
+    # Cap the displayed confidence when TP1 isn't a fresh structural level —
+    # a high R:R driven by a stale/fallback target overstates setup quality.
+    if not tp1_structural or tp1_stale:
+        confidence = min(confidence, 5)
 
     def _v(obj, key, default=None):
         if obj is None:
@@ -71,6 +80,13 @@ def format_setup_message(
     sl_sign  = "-" if bias == "LONG" else "+"
     tp1_sign = "+" if bias == "LONG" else "-"
 
+    if not tp1_structural:
+        tp1_quality = "⚠️ ne struktūrinis (fallback %, RR spekuliatyvus)"
+    elif tp1_stale:
+        tp1_quality = f"⚠️ senas 4H lygis (prieš {tp1_age} žvakių, ~{tp1_age * 4 / 24:.1f}d)"
+    else:
+        tp1_quality = f"✓ šviežias 4H lygis (prieš {tp1_age} žvakių)"
+
     now = datetime.now(ZoneInfo(TIMEZONE)).strftime("%Y-%m-%d %H:%M %Z")
 
     return (
@@ -82,7 +98,7 @@ def format_setup_message(
         f"💰 <b>POZICIJA:</b>\n"
         f"  Entry:  <code>${entry:,.4f}</code>\n"
         f"  SL:     <code>${sl:,.4f}</code>  ({sl_sign}{sl_pct:.2f}%){tte_note}\n"
-        f"  TP1:    <code>${tp1:,.4f}</code>  ({tp1_sign}{tp1_pct:.2f}%)\n"
+        f"  TP1:    <code>${tp1:,.4f}</code>  ({tp1_sign}{tp1_pct:.2f}%)  {tp1_quality}\n"
         f"  TP2:    <code>${tp2:,.4f}</code>\n"
         f"  R:R  =  1:{rr:.1f}\n"
         f"\n"

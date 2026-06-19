@@ -39,7 +39,10 @@ Privalomi laukai:
 }
 
 Jei confidence < 7 arba setup'as silpnas — nustatyk "skip": true.
-TTE įėjimas yra geresnis nei Hook įėjimas — vertink jį aukščiau."""
+TTE įėjimas yra geresnis nei Hook įėjimas — vertink jį aukščiau.
+Jei TP1 pažymėtas kaip "⚠️ NE struktūrinis" arba "⚠️ senas 4H lygis" — aukštas R:R \
+nereiškia stipraus setup'o, nes tikslas nėra šviežia struktūrinė riba. Tokiu atveju \
+vertink confidence kritiškiau, nebent kiti faktoriai (OB/FVG, hook amžius) kompensuoja."""
 
 
 # ─── Context Builder ──────────────────────────────────────────────────────────
@@ -82,6 +85,16 @@ def build_analysis_context(analysis: dict, position: dict) -> str:
     bos_label = "CHoCH" if struct.get("is_choch") else "BOS"
     pd_zone   = pd_info.get("zone", "?").upper()
     fib_pct   = (pd_info.get("fib_pct") or 0) * 100
+
+    tp1_structural = analysis.get("tp1_structural", True)
+    tp1_stale      = analysis.get("tp1_stale", False)
+    tp1_age        = analysis.get("tp1_age_4h")
+    if not tp1_structural:
+        tp1_quality = "⚠️ NE struktūrinis — fallback %, RR spekuliatyvus"
+    elif tp1_stale:
+        tp1_quality = f"⚠️ senas 4H lygis (prieš {tp1_age} žvakių)"
+    else:
+        tp1_quality = f"šviežias 4H lygis (prieš {tp1_age} žvakių)"
 
     if tte:
         tte_line    = (
@@ -127,7 +140,7 @@ def build_analysis_context(analysis: dict, position: dict) -> str:
         f"  ── TRADE PARAMETRAI ──",
         f"  Entry:  ${entry:>12,.4f}",
         f"  SL:     ${sl:>12,.4f}  (-{sl_pct:.2f}%)",
-        f"  TP1:    ${tp1:>12,.4f}  (+{tp1_pct:.2f}%)",
+        f"  TP1:    ${tp1:>12,.4f}  (+{tp1_pct:.2f}%)  [{tp1_quality}]",
         f"  TP2:    ${tp2:>12,.4f}",
         f"  R:R  =  1:{rr:.1f}",
         f"",
