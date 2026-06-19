@@ -17,6 +17,7 @@ curl -fsSL "$BASE/config.py"                   -o "$DIR/config.py"
 curl -fsSL "$BASE/requirements.txt"            -o "$DIR/requirements.txt"
 curl -fsSL "$BASE/run_mcp.sh"                  -o "$DIR/run_mcp.sh"
 curl -fsSL "$BASE/run_main.sh"                 -o "$DIR/run_main.sh"
+curl -fsSL "$BASE/diagnose_rr.py"              -o "$DIR/diagnose_rr.py"
 
 curl -fsSL "$BASE/analysis/__init__.py"        -o "$DIR/analysis/__init__.py"
 curl -fsSL "$BASE/analysis/market_data.py"     -o "$DIR/analysis/market_data.py"
