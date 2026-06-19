@@ -68,12 +68,19 @@ def diagnose(pair: str) -> None:
     swing_highs = structure_4h.get("swing_highs", [])
     swing_lows = structure_4h.get("swing_lows", [])
     if swing_highs and swing_lows:
-        pd_info = get_pd_zone(swing_highs[-1].price, swing_lows[-1].price, current_price)
+        last_high, last_low = swing_highs[-1], swing_lows[-1]
+        last_4h_i = len(df_4h) - 1
+        pd_info = get_pd_zone(last_high.price, last_low.price, current_price)
+        debug_pd = (
+            f"[high={last_high.price:.4f}@{last_4h_i - last_high.index}candles_ago "
+            f"low={last_low.price:.4f}@{last_4h_i - last_low.index}candles_ago "
+            f"eq={pd_info['equilibrium']:.4f} fib={pd_info['fib_pct']:.2f} price={current_price:.4f}]"
+        )
         if bias == "bullish" and pd_info["zone"] == "premium":
-            print(f"{pair:6} | hook={hook_bias:7} 4H={bias_4h:7} {ob_label} {fvg_label} | ❌ premium zone (need discount)")
+            print(f"{pair:6} | hook={hook_bias:7} 4H={bias_4h:7} {ob_label} {fvg_label} | ❌ premium zone (need discount) {debug_pd}")
             return
         if bias == "bearish" and pd_info["zone"] == "discount":
-            print(f"{pair:6} | hook={hook_bias:7} 4H={bias_4h:7} {ob_label} {fvg_label} | ❌ discount zone (need premium)")
+            print(f"{pair:6} | hook={hook_bias:7} 4H={bias_4h:7} {ob_label} {fvg_label} | ❌ discount zone (need premium) {debug_pd}")
             return
     else:
         pd_info = {"zone": "unknown"}
