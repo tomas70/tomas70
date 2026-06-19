@@ -241,13 +241,16 @@ def find_order_blocks(
         ob_high = highs[ob_index]
         ob_low  = lows[ob_index]
 
-        # Check mitigation: has price entered the OB zone after its formation?
+        # Check mitigation: has price CLOSED through the OB zone after its
+        # formation? A wick/touch into the zone is a retest (the intended
+        # entry signal), not invalidation — only a close beyond the far
+        # boundary confirms the zone failed to hold.
         mitigated = False
         for k in range(ob_index + 1, last_i + 1):
-            if structure_bias == "bullish" and lows[k] <= ob_high and highs[k] >= ob_low:
+            if structure_bias == "bullish" and closes[k] < ob_low:
                 mitigated = True
                 break
-            elif structure_bias == "bearish" and highs[k] >= ob_low and lows[k] <= ob_high:
+            elif structure_bias == "bearish" and closes[k] > ob_high:
                 mitigated = True
                 break
 
