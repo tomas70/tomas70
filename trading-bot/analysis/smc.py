@@ -167,20 +167,12 @@ def detect_market_structure(df: pd.DataFrame) -> dict:
 
     bos_events = _detect_bos_events(df, swing_highs, swing_lows)
 
-    # Bias from last two swing highs and swing lows
-    hh = swing_highs[-1].price > swing_highs[-2].price
-    hl = swing_lows[-1].price  > swing_lows[-2].price
-    lh = swing_highs[-1].price < swing_highs[-2].price
-    ll = swing_lows[-1].price  < swing_lows[-2].price
-
-    if hh and hl:
-        bias: MarketBias = "bullish"
-    elif lh and ll:
-        bias = "bearish"
-    else:
-        bias = "ranging"
-
+    # Bias = direction of the most recent break of structure (BOS/CHoCH).
+    # More forgiving than requiring a strict HH+HL / LH+LL pair from only
+    # the last two swing points, which misclassifies normal pullback-driven
+    # trends (e.g. a fresh higher high with a lower low) as "ranging".
     last_bos = bos_events[-1] if bos_events else None
+    bias: MarketBias = last_bos.direction if last_bos else "ranging"
 
     return {
         "bias": bias,
