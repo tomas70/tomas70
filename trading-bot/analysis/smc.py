@@ -11,6 +11,33 @@ MarketBias = Literal["bullish", "bearish", "ranging"]
 
 ORDER_BLOCK_MAX_AGE = 50   # candles
 FVG_MIN_GAP_PCT    = 0.001 # 0.1% minimum gap to filter noise
+ATR_PERIOD          = 14
+
+
+def calculate_atr(df: pd.DataFrame, period: int = ATR_PERIOD) -> float:
+    """
+    Latest Average True Range (Wilder smoothing), in price units.
+
+    Used to size OB proximity per-pair instead of a flat % of price, since
+    volatility varies widely across pairs (e.g. BTC vs SUI).
+    """
+    highs  = df["high"].values
+    lows   = df["low"].values
+    closes = df["close"].values
+
+    if len(df) < 2:
+        return 0.0
+
+    prev_closes = np.roll(closes, 1)
+    prev_closes[0] = closes[0]
+
+    true_range = np.maximum(
+        highs - lows,
+        np.maximum(np.abs(highs - prev_closes), np.abs(lows - prev_closes)),
+    )
+
+    window = min(period, len(true_range))
+    return float(pd.Series(true_range).ewm(alpha=1 / window, adjust=False).mean().iloc[-1])
 
 
 # ─── Data Classes ─────────────────────────────────────────────────────────────

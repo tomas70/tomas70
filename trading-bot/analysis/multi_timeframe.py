@@ -16,15 +16,16 @@ from typing import Optional
 from .market_data import get_all_timeframes
 from .smc import (
     FVG, OrderBlock, SwingPoint,
-    detect_market_structure, find_fvg, find_order_blocks, get_pd_zone,
+    calculate_atr, detect_market_structure, find_fvg, find_order_blocks, get_pd_zone,
 )
 from .ross_hook import detect_ross_hook, get_tte_entry
 from config import MIN_RR_RATIO
 
 logger = logging.getLogger(__name__)
 
-# OB zone: current price must be within 2% of OB boundary
-OB_PROXIMITY_PCT = 0.02
+# OB zone: current price must be within this many 1H ATRs of the OB boundary.
+# ATR-based (not a flat %) since volatility varies widely across pairs.
+OB_PROXIMITY_ATR_MULT = 2.0
 # Fallback SL buffer when using hook-level entry (no TTE)
 SL_BUFFER_PCT    = 0.003
 
@@ -35,16 +36,18 @@ def _find_nearest_ob(
     obs: list[OrderBlock],
     current_price: float,
     bias: str,
+    atr: float,
 ) -> Optional[OrderBlock]:
     """
     Returns the most recent unmitigated OB whose zone the current price
-    is touching or approaching (within OB_PROXIMITY_PCT).
+    is touching or approaching (within OB_PROXIMITY_ATR_MULT * atr).
     """
+    proximity = atr * OB_PROXIMITY_ATR_MULT
     for ob in obs:
         if bias == "bullish":
-            in_zone = ob.low <= current_price <= ob.high * (1 + OB_PROXIMITY_PCT)
+            in_zone = ob.low <= current_price <= ob.high + proximity
         else:
-            in_zone = ob.low * (1 - OB_PROXIMITY_PCT) <= current_price <= ob.high
+            in_zone = ob.low - proximity <= current_price <= ob.high
         if in_zone:
             return ob
     return None
@@ -171,7 +174,8 @@ def get_full_analysis(pair: str) -> dict:
     if not active_obs:
         return {"valid": False, "reason": f"No active {bias} OBs on 1H"}
 
-    nearest_ob = _find_nearest_ob(active_obs, current_price, bias)
+    atr_1h     = calculate_atr(df_1h)
+    nearest_ob = _find_nearest_ob(active_obs, current_price, bias, atr_1h)
     if nearest_ob is None:
         return {"valid": False, "reason": "Price not in or near any active 1H OB zone"}
 

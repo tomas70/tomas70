@@ -14,9 +14,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from analysis.market_data import get_all_timeframes
-from analysis.smc import detect_market_structure, find_order_blocks, get_pd_zone
+from analysis.smc import calculate_atr, detect_market_structure, find_order_blocks, get_pd_zone
 from analysis.ross_hook import detect_ross_hook, get_tte_entry
-from analysis.multi_timeframe import _find_nearest_ob, _build_levels, SL_BUFFER_PCT
+from analysis.multi_timeframe import (
+    _find_nearest_ob, _build_levels, SL_BUFFER_PCT, OB_PROXIMITY_ATR_MULT,
+)
 from config import PAIRS
 
 
@@ -55,19 +57,22 @@ def diagnose(pair: str) -> None:
     if not active_obs:
         print(f"{pair:6} | hook={hook_bias:7} 4H={bias_4h:7} | ❌ no active OB")
         return
-    nearest_ob = _find_nearest_ob(active_obs, current_price, bias)
+    atr_1h = calculate_atr(df_1h)
+    nearest_ob = _find_nearest_ob(active_obs, current_price, bias, atr_1h)
     if nearest_ob is None:
-        closest_dist_pct = min(
+        proximity = atr_1h * OB_PROXIMITY_ATR_MULT
+        closest_dist = min(
             (
-                (ob.low - current_price) / current_price * 100 if current_price < ob.low
-                else (current_price - ob.high) / current_price * 100 if current_price > ob.high
+                (ob.low - current_price) if current_price < ob.low
+                else (current_price - ob.high) if current_price > ob.high
                 else 0.0
             )
             for ob in active_obs
         )
         print(
             f"{pair:6} | hook={hook_bias:7} 4H={bias_4h:7} | ❌ price not near OB "
-            f"({len(active_obs)} OBs exist, closest is {closest_dist_pct:.2f}% away, need <=2%)"
+            f"({len(active_obs)} OBs exist, closest is {closest_dist:.4f} away, "
+            f"allowed {proximity:.4f} = {OB_PROXIMITY_ATR_MULT}x ATR)"
         )
         return
 
