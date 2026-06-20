@@ -3,11 +3,13 @@ Multi-timeframe analysis: Ross Hook primary, SMC confirmation, TTE entry.
 
 Logic flow:
   15m  → Ross Hook (1-2-3 pattern + breakout + hook)  [PRIMARY SIGNAL]
+  15m  → Hook age ≤ MAX_HOOK_AGE_FOR_ALERT             [FRESHNESS FILTER]
   15m  → TTE entry bar (Trader's Trick Entry)          [ENTRY LEVEL]
   4H   → BOS/CHoCH market structure bias               [DIRECTION FILTER]
   1H   → Order Block near the hook/TTE area            [SMC CONFLUENCE — bonus]
   1H   → Fair Value Gap overlap                        [SMC CONFLUENCE — bonus]
   4H   → Premium/Discount Fibonacci zone               [CONTEXT — bonus]
+  4H   → TP1 swing age ≤ TP1_MAX_AGE_4H                [FRESHNESS FILTER]
   All  → R:R ≥ MIN_RR_RATIO                            [RISK FILTER]
 
 OB/FVG/PD-zone are confirmation, not the primary signal — they raise
@@ -38,10 +40,18 @@ logger = logging.getLogger(__name__)
 OB_PROXIMITY_ATR_MULT = 2.0
 # Fallback SL buffer when using hook-level entry (no TTE)
 SL_BUFFER_PCT    = 0.003
-# TP1 swing older than this (in 4H candles, ~3.3 days) is still used as the
-# target but flagged stale — a level set further back in time is more
-# likely to have already been tested/invalidated by intervening price action.
-TP1_STALE_AGE_4H = 20
+# Max age (in 4H candles) a TP1 swing may have to count as a valid target.
+# find_swing_highs/lows use window=5, so a swing can't be confirmed any
+# sooner than 5 candles after it forms — 5 is the physical floor. 8 gives a
+# small buffer above that floor while still requiring TP1 to be a genuinely
+# recent structural level, not one set far in the past.
+TP1_MAX_AGE_4H = 8
+# Max age (in 15m candles) a Ross Hook may have for the setup to still be
+# worth alerting on. detect_ross_hook() itself allows hooks up to
+# MAX_HOOK_AGE=30 candles old to remain "formed", but by then the early
+# TTE entry opportunity has usually passed — this tighter cutoff keeps
+# alerts limited to genuinely fresh, actionable signals.
+MAX_HOOK_AGE_FOR_ALERT = 5
 
 
 # ─── Internal Helpers ─────────────────────────────────────────────────────────
@@ -133,7 +143,7 @@ def _build_levels(
         "tp1_pct":        round(tp1_dist / entry * 100, 3),
         "tp1_structural": tp_info["tp1_structural"],
         "tp1_age_4h":     tp_info["tp1_age"],
-        "tp1_stale":      tp_info["tp1_age"] is not None and tp_info["tp1_age"] > TP1_STALE_AGE_4H,
+        "tp1_stale":      tp_info["tp1_age"] is not None and tp_info["tp1_age"] > TP1_MAX_AGE_4H,
     }
 
 
@@ -151,7 +161,9 @@ def get_full_analysis(pair: str) -> dict:
 
     Gates (all must pass):
       ✓ 15m Ross Hook formed and not stale
+      ✓ Hook formed no more than MAX_HOOK_AGE_FOR_ALERT candles ago
       ✓ 4H market structure bias matches hook direction
+      ✓ TP1 backed by a real 4H swing no older than TP1_MAX_AGE_4H candles
       ✓ R:R ≥ MIN_RR_RATIO
 
     Entry source:
@@ -182,6 +194,13 @@ def get_full_analysis(pair: str) -> dict:
         return {"valid": False, "reason": "No completed Ross Hook on 15m"}
 
     hook_bias = hook["pattern"]  # "bullish" | "bearish"
+
+    # ── Gate 1b: Hook Freshness ───────────────────────────────────────────────
+    if hook["candles_ago"] > MAX_HOOK_AGE_FOR_ALERT:
+        return {
+            "valid":  False,
+            "reason": f"Hook signal too old ({hook['candles_ago']} candles, max {MAX_HOOK_AGE_FOR_ALERT})",
+        }
 
     # ── Gate 2: 4H Structure Bias ─────────────────────────────────────────────
     structure_4h = detect_market_structure(df_4h)
@@ -248,9 +267,22 @@ def get_full_analysis(pair: str) -> dict:
         sl    = p2 * (1 - SL_BUFFER_PCT) if bias == "bullish" else p2 * (1 + SL_BUFFER_PCT)
         entry_type = "HOOK"
 
-    # ── Gate 5: R:R Check ─────────────────────────────────────────────────────
     levels = _build_levels(bias, entry, sl, swing_highs, swing_lows, len(df_4h) - 1)
 
+    # ── Gate 5: TP1 Freshness ─────────────────────────────────────────────────
+    # A high R:R is meaningless if TP1 isn't a real, recent structural level —
+    # require an actual 4H swing (not the flat-% fallback) confirmed within
+    # TP1_MAX_AGE_4H candles.
+    if not levels["tp1_structural"]:
+        return {"valid": False, "reason": "TP1 has no 4H structural target (fallback %)"}
+
+    if levels["tp1_age_4h"] > TP1_MAX_AGE_4H:
+        return {
+            "valid":  False,
+            "reason": f"TP1 4H swing too old ({levels['tp1_age_4h']} candles, max {TP1_MAX_AGE_4H})",
+        }
+
+    # ── Gate 6: R:R Check ─────────────────────────────────────────────────────
     if levels["rr_ratio"] < MIN_RR_RATIO:
         return {
             "valid":  False,

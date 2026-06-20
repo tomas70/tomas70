@@ -39,10 +39,7 @@ Privalomi laukai:
 }
 
 Jei confidence < 7 arba setup'as silpnas — nustatyk "skip": true.
-TTE įėjimas yra geresnis nei Hook įėjimas — vertink jį aukščiau.
-Jei TP1 pažymėtas kaip "⚠️ NE struktūrinis" arba "⚠️ senas 4H lygis" — aukštas R:R \
-nereiškia stipraus setup'o, nes tikslas nėra šviežia struktūrinė riba. Tokiu atveju \
-vertink confidence kritiškiau, nebent kiti faktoriai (OB/FVG, hook amžius) kompensuoja."""
+TTE įėjimas yra geresnis nei Hook įėjimas — vertink jį aukščiau."""
 
 
 # ─── Context Builder ──────────────────────────────────────────────────────────
@@ -86,15 +83,10 @@ def build_analysis_context(analysis: dict, position: dict) -> str:
     pd_zone   = pd_info.get("zone", "?").upper()
     fib_pct   = (pd_info.get("fib_pct") or 0) * 100
 
-    tp1_structural = analysis.get("tp1_structural", True)
-    tp1_stale      = analysis.get("tp1_stale", False)
-    tp1_age        = analysis.get("tp1_age_4h")
-    if not tp1_structural:
-        tp1_quality = "⚠️ NE struktūrinis — fallback %, RR spekuliatyvus"
-    elif tp1_stale:
-        tp1_quality = f"⚠️ senas 4H lygis (prieš {tp1_age} žvakių)"
-    else:
-        tp1_quality = f"šviežias 4H lygis (prieš {tp1_age} žvakių)"
+    # get_full_analysis() hard-gates on TP1 freshness, so any setup reaching
+    # this builder already has a real, recent 4H swing behind TP1.
+    tp1_age     = analysis.get("tp1_age_4h")
+    tp1_quality = f"šviežias 4H lygis (prieš {tp1_age} žvakių)"
 
     if tte:
         tte_line    = (
