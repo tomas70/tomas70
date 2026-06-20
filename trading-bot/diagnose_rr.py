@@ -114,7 +114,7 @@ if __name__ == "__main__":
         diagnose(pair)
 
     print("\nLegend: ✅ RR>=3.0  🟡 RR>=2.0  🔴 RR<2.0  |  OB/FVG/PD = bonus confluence, not a gate")
-    print(f"        tp1_age = candles since the 4H swing used for TP1 (⚠️stale if > {TP1_MAX_AGE_4H} candles — HARD GATE in production)")
-    print("        tp1=fallback% = no 4H swing beyond entry, TP1 is a flat % guess — HARD GATE in production")
+    print(f"        tp1_age = candles since the 4H swing used for TP1 (⚠️stale if > {TP1_MAX_AGE_4H} candles — info only, not a gate)")
+    print("        tp1=fallback% = no 4H swing beyond entry, TP1 is a flat % guess — info only, not a gate")
     print(f"        hook_age = 15m candles since the Ross Hook formed (⚠️stale if > {MAX_HOOK_AGE_FOR_ALERT} candles — HARD GATE in production)")
-    print("        NOTE: this script shows setups even if they'd fail the TP1/hook freshness gates, for tuning")
+    print("        NOTE: this script shows setups even if they'd fail the hook freshness gate, for tuning")

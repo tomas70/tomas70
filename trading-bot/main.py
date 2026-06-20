@@ -140,13 +140,15 @@ def scan_markets(silent: bool = False) -> str:
         else:
             ob_conf  = "OB✓" if analysis.get("order_block") else "OB✗"
             fvg_conf = "FVG✓" if analysis.get("fvg") else "FVG✗"
+            tp1_warn = "" if analysis.get("tp1_structural") and not analysis.get("tp1_stale") else " ⚠️TP1 speculative"
             decision = {
                 "confidence": 0,
-                "reasoning": f"Auto: Hook+4H+PD+RR ✓ ({ob_conf} {fvg_conf} bonus)",
+                "reasoning": f"Auto: Hook+4H+PD+RR ✓ ({ob_conf} {fvg_conf} bonus){tp1_warn}",
             }
 
         rr = analysis.get("rr_ratio", 0)
-        checked.append(f"{pair}: ✅ RR={rr:.1f}")
+        rr_flag = "⚠️" if not analysis.get("tp1_structural") or analysis.get("tp1_stale") else ""
+        checked.append(f"{pair}: ✅ RR={rr:.1f}{rr_flag}")
         if rr > best_rr:
             best_rr       = rr
             best_setup    = {**analysis, **position}
