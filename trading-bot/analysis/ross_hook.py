@@ -12,8 +12,8 @@ Flow:
      within the window doesn't consume the bar budget (no real progress
      was made), so the window can extend slightly in that case. Beyond
      the window the odds favor consolidation, so TTE is abandoned.
-  6. SL = the opposite side of the signal bar itself (Ross's rule),
-     not the full pullback/bounce extreme.
+  6. SL = the opposite side of the signal bar itself (Ross's rule), offset
+     by a small ATR buffer — not the full pullback/bounce extreme.
 """
 import logging
 from dataclasses import dataclass
@@ -21,7 +21,7 @@ from typing import Literal, Optional
 
 import pandas as pd
 
-from .smc import SwingPoint, find_swing_highs, find_swing_lows
+from .smc import SwingPoint, calculate_atr, find_swing_highs, find_swing_lows
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +40,12 @@ TTE_MAX_CORRECTION_BARS = 3
 # hasn't made real progress away from that level. Real OHLCV data rarely
 # produces an exact tie, hence the small tolerance.
 TTE_TIE_TOLERANCE_PCT = 0.0005
+# Ross's stop sits on the opposite side of the signal bar — but a bare
+# single-15m-candle range is thin enough that ordinary spread/wick noise
+# can stop out an otherwise-correct trade. ATR-scaled (not a flat %) so
+# the buffer matches each pair's own volatility, same approach already
+# used for OB proximity (OB_PROXIMITY_ATR_MULT in multi_timeframe.py).
+TTE_SL_BUFFER_ATR_MULT = 0.25
 
 
 # ─── Data Classes ─────────────────────────────────────────────────────────────
@@ -212,7 +218,9 @@ def get_tte_entry(df: pd.DataFrame, hook: dict) -> Optional[dict]:
       2. Entry  = the high of the first bar that exceeds the running
          reference high (place buy-stop just above).
       3. SL     = the LOW of that same signal bar — opposite side of the
-         bar, per Ross's rule, not the wider pullback extreme.
+         bar, per Ross's rule — minus a small ATR buffer
+         (TTE_SL_BUFFER_ATR_MULT) so ordinary spread/wick noise on a thin
+         single-candle range doesn't stop out an otherwise-correct trade.
 
     Bearish TTE mirrors this on lows/highs.
 
@@ -233,19 +241,22 @@ def get_tte_entry(df: pd.DataFrame, hook: dict) -> Optional[dict]:
     if hook_index + 1 > last_i:
         return None
 
+    atr_buffer = calculate_atr(df) * TTE_SL_BUFFER_ATR_MULT
+
     if pattern == "bullish":
         ref_high     = highs[hook_index + 1]
         bars_counted = 1
         i = hook_index + 2
         while i <= last_i and bars_counted <= TTE_MAX_CORRECTION_BARS:
             if highs[i] > ref_high:
+                sl = lows[i] - atr_buffer
                 logger.debug(
                     "Bullish TTE signal bar at %d: entry=%.4f, sl=%.4f",
-                    i, highs[i], lows[i],
+                    i, highs[i], sl,
                 )
                 return {
                     "tte_entry":     round(highs[i], 8),
-                    "tte_sl":        round(lows[i], 8),
+                    "tte_sl":        round(sl, 8),
                     "tte_bar_index": i,
                     "entry_type":    "TTE",
                 }
@@ -261,13 +272,14 @@ def get_tte_entry(df: pd.DataFrame, hook: dict) -> Optional[dict]:
         i = hook_index + 2
         while i <= last_i and bars_counted <= TTE_MAX_CORRECTION_BARS:
             if lows[i] < ref_low:
+                sl = highs[i] + atr_buffer
                 logger.debug(
                     "Bearish TTE signal bar at %d: entry=%.4f, sl=%.4f",
-                    i, lows[i], highs[i],
+                    i, lows[i], sl,
                 )
                 return {
                     "tte_entry":     round(lows[i], 8),
-                    "tte_sl":        round(highs[i], 8),
+                    "tte_sl":        round(sl, 8),
                     "tte_bar_index": i,
                     "entry_type":    "TTE",
                 }
