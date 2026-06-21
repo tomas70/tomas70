@@ -101,6 +101,33 @@ def find_swing_points(df: pd.DataFrame, window: int = 5) -> list[SwingPoint]:
     return sorted(points, key=lambda p: p.index)
 
 
+def filter_unswept_swings(df: pd.DataFrame, swings: list[SwingPoint]) -> list[SwingPoint]:
+    """
+    Returns only swings whose level hasn't been closed through since it
+    formed — i.e. liquidity that's still resting, not already taken.
+
+    A swing high is "swept" once a later candle CLOSES above it; a swing
+    low once a later candle CLOSES below it. An already-swept level is no
+    longer a real target — the liquidity above/below it has already
+    traded, so price reaching it again isn't "going for" anything.
+    """
+    closes = df["close"].values
+    n = len(closes)
+    result: list[SwingPoint] = []
+    for sp in swings:
+        swept = False
+        for k in range(sp.index + 1, n):
+            if sp.kind == "high" and closes[k] > sp.price:
+                swept = True
+                break
+            if sp.kind == "low" and closes[k] < sp.price:
+                swept = True
+                break
+        if not swept:
+            result.append(sp)
+    return result
+
+
 # ─── BOS / CHoCH Detection ────────────────────────────────────────────────────
 
 def _detect_bos_events(

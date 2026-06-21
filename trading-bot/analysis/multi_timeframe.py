@@ -9,8 +9,15 @@ Logic flow:
   1H   → Order Block near the hook/TTE area            [SMC CONFLUENCE — bonus]
   1H   → Fair Value Gap overlap                        [SMC CONFLUENCE — bonus]
   4H   → Premium/Discount Fibonacci zone               [CONTEXT — bonus]
+  4H   → TP1/TP2 = nearest UNSWEPT 4H swing beyond entry [TARGET — real liquidity only]
   4H   → TP1 swing age                                  [CONTEXT — bonus, see below]
   All  → R:R ≥ MIN_RR_RATIO                            [RISK FILTER]
+
+TP1/TP2 target real, untapped liquidity: a 4H swing high/low whose level
+hasn't already been closed through (filter_unswept_swings). A swing that
+price has already closed beyond no longer has resting liquidity at it, so
+even though it's still "beyond entry" by price, it isn't a meaningful
+target — the move it would have implied already happened.
 
 OB/FVG/PD-zone/TP1-age are confirmation, not the primary signal — they raise
 confidence in a Hook+TTE setup but don't block a trade on their own. TP1 age
@@ -37,7 +44,8 @@ from typing import Optional
 from .market_data import get_all_timeframes
 from .smc import (
     FVG, OrderBlock, SwingPoint,
-    calculate_atr, detect_market_structure, find_fvg, find_order_blocks, get_pd_zone,
+    calculate_atr, detect_market_structure, filter_unswept_swings, find_fvg,
+    find_order_blocks, get_pd_zone,
 )
 from .ross_hook import detect_ross_hook, get_tte_entry
 from config import MIN_RR_RATIO
@@ -105,9 +113,15 @@ def _tp_targets(
     """
     Derive TP1 / TP2 from the nearest 4H structural swing levels beyond entry.
 
-    Falls back to a flat % target when no swing lies beyond entry — flagged
-    via tp1_structural=False so callers can warn that the level isn't backed
-    by real 4H structure (and a high R:R off it is more speculative).
+    swing_highs/swing_lows must already be pre-filtered to unswept liquidity
+    (see filter_unswept_swings) — an already-closed-through swing has no
+    resting liquidity left at it and isn't a real target, even though it's
+    still "beyond entry" by price alone.
+
+    Falls back to a flat % target when no unswept swing lies beyond entry —
+    flagged via tp1_structural=False so callers can warn that the level
+    isn't backed by real 4H structure (and a high R:R off it is more
+    speculative).
     """
     if bias == "bullish":
         above  = sorted((sp for sp in swing_highs if sp.price > entry), key=lambda sp: sp.price)
@@ -278,7 +292,13 @@ def get_full_analysis(pair: str) -> dict:
         sl    = p2 * (1 - SL_BUFFER_PCT) if bias == "bullish" else p2 * (1 + SL_BUFFER_PCT)
         entry_type = "HOOK"
 
-    levels = _build_levels(bias, entry, sl, swing_highs, swing_lows, len(df_4h) - 1)
+    # TP1/TP2 target real, untapped liquidity — a swing already closed
+    # through doesn't have resting liquidity left at it, so it's not a
+    # meaningful target even though it's still "beyond entry" by price.
+    unswept_highs = filter_unswept_swings(df_4h, swing_highs)
+    unswept_lows  = filter_unswept_swings(df_4h, swing_lows)
+
+    levels = _build_levels(bias, entry, sl, unswept_highs, unswept_lows, len(df_4h) - 1)
 
     # ── Gate 3: R:R Check ─────────────────────────────────────────────────────
     if levels["rr_ratio"] < MIN_RR_RATIO:

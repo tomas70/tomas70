@@ -6,9 +6,14 @@ Flow:
   2. Price breaks out beyond P2 — trend confirmed
   3. Post-breakout swing = Ross Hook level
   4. Price pulls back to/toward the hook (correction)
-  5. TTE: first "up bar" (bullish) or "down bar" (bearish) in the correction
-     → enter 1 tick above/below that bar's high/low (before the crowd)
-  6. SL = pullback low (bullish) or bounce high (bearish)
+  5. TTE: violation of the high (bullish) / low (bearish) of any of the
+     first TTE_MAX_CORRECTION_BARS bars after the hook — enter at that
+     bar's high/low (before the crowd). A double/triple top or bottom
+     within the window doesn't consume the bar budget (no real progress
+     was made), so the window can extend slightly in that case. Beyond
+     the window the odds favor consolidation, so TTE is abandoned.
+  6. SL = the opposite side of the signal bar itself (Ross's rule),
+     not the full pullback/bounce extreme.
 """
 import logging
 from dataclasses import dataclass
@@ -23,6 +28,18 @@ logger = logging.getLogger(__name__)
 MAIN_SWING_WINDOW = 5   # window for 1-2-3 structure
 HOOK_SWING_WINDOW = 3   # smaller window for post-breakout hook sensitivity
 MAX_HOOK_AGE      = 30  # candles; older hooks are stale
+
+# TTE only watches the first N bars of the correction — "beyond 3 bars of
+# correction, the odds begin to favor consolidation, so there's no reason
+# to attempt the TTE" (Ross). Window can extend within that budget when a
+# double/triple top forms (see TTE_TIE_TOLERANCE_PCT below).
+TTE_MAX_CORRECTION_BARS = 3
+# A bar whose high/low is within this tolerance of the reference level is
+# treated as a tie (double/triple top or bottom) rather than a genuinely
+# lower/higher bar — it doesn't consume the 3-bar budget, since price
+# hasn't made real progress away from that level. Real OHLCV data rarely
+# produces an exact tie, hence the small tolerance.
+TTE_TIE_TOLERANCE_PCT = 0.0005
 
 
 # ─── Data Classes ─────────────────────────────────────────────────────────────
@@ -182,24 +199,25 @@ def get_tte_entry(df: pd.DataFrame, hook: dict) -> Optional[dict]:
     """
     Joe Ross Trader's Trick Entry (TTE) — enter BEFORE the crowd.
 
-    After the Ross Hook forms, price pulls back (bullish) or bounces (bearish).
-    Instead of waiting for price to break the hook level, TTE enters earlier:
+    Rule: "we watch the correction and want to buy [sell] a violation of
+    the high [low] of any of the first three [bars] after the Ross Hook"
+    (Ross, Trading Educators). Each correction bar's high/low becomes a
+    reference level; the first subsequent bar to break it is the signal
+    bar. A double/triple top or bottom (a bar tying the reference within
+    TTE_TIE_TOLERANCE_PCT) doesn't consume the bar budget — no real
+    progress was made. Beyond TTE_MAX_CORRECTION_BARS, abandon the TTE.
 
     Bullish TTE:
-      1. Identify the pullback low (lowest bar since hook)
-      2. Look for the first "up bar" after the pullback low:
-         a bar whose HIGH exceeds the previous bar's HIGH
-      3. Entry  = that bar's HIGH  (place buy-stop just above)
-      4. SL     = pullback low
+      1. Watch up to the first TTE_MAX_CORRECTION_BARS bars after the hook.
+      2. Entry  = the high of the first bar that exceeds the running
+         reference high (place buy-stop just above).
+      3. SL     = the LOW of that same signal bar — opposite side of the
+         bar, per Ross's rule, not the wider pullback extreme.
 
-    Bearish TTE:
-      1. Identify the bounce high (highest bar since hook)
-      2. Look for the first "down bar" after the bounce high:
-         a bar whose LOW is below the previous bar's LOW
-      3. Entry  = that bar's LOW  (place sell-stop just below)
-      4. SL     = bounce high
+    Bearish TTE mirrors this on lows/highs.
 
-    Returns None if the TTE signal bar hasn't yet formed (correction ongoing).
+    Returns None if no violation occurs within the window (TTE abandoned)
+    or the correction hasn't produced enough bars yet.
     """
     if not hook or not hook.get("formation_complete"):
         return None
@@ -211,57 +229,54 @@ def get_tte_entry(df: pd.DataFrame, hook: dict) -> Optional[dict]:
     lows   = df["low"].values
     last_i = len(df) - 1
 
-    # Need at least 2 bars after hook for a TTE signal
-    if hook_index + 2 > last_i:
+    # Need at least 1 bar after the hook to set the reference level
+    if hook_index + 1 > last_i:
         return None
 
     if pattern == "bullish":
-        # ── Step 1: find pullback low after hook ──────────────────────────────
-        pullback_low_i = hook_index
-        for i in range(hook_index + 1, last_i + 1):
-            if lows[i] < lows[pullback_low_i]:
-                pullback_low_i = i
-
-        tte_sl = lows[pullback_low_i]
-
-        # ── Step 2: first up-bar after the pullback low ───────────────────────
-        # An up-bar: bar[i].high > bar[i-1].high  (buying pressure resuming)
-        for i in range(pullback_low_i + 1, last_i + 1):
-            if highs[i] > highs[i - 1]:
+        ref_high     = highs[hook_index + 1]
+        bars_counted = 1
+        i = hook_index + 2
+        while i <= last_i and bars_counted <= TTE_MAX_CORRECTION_BARS:
+            if highs[i] > ref_high:
                 logger.debug(
                     "Bullish TTE signal bar at %d: entry=%.4f, sl=%.4f",
-                    i, highs[i], tte_sl,
+                    i, highs[i], lows[i],
                 )
                 return {
                     "tte_entry":     round(highs[i], 8),
-                    "tte_sl":        round(tte_sl, 8),
+                    "tte_sl":        round(lows[i], 8),
                     "tte_bar_index": i,
                     "entry_type":    "TTE",
                 }
+            is_tie = highs[i] >= ref_high * (1 - TTE_TIE_TOLERANCE_PCT)
+            if not is_tie:
+                bars_counted += 1
+            ref_high = max(ref_high, highs[i])
+            i += 1
 
     else:  # bearish
-        # ── Step 1: find bounce high after hook ───────────────────────────────
-        bounce_high_i = hook_index
-        for i in range(hook_index + 1, last_i + 1):
-            if highs[i] > highs[bounce_high_i]:
-                bounce_high_i = i
-
-        tte_sl = highs[bounce_high_i]
-
-        # ── Step 2: first down-bar after the bounce high ──────────────────────
-        # A down-bar: bar[i].low < bar[i-1].low  (selling pressure resuming)
-        for i in range(bounce_high_i + 1, last_i + 1):
-            if lows[i] < lows[i - 1]:
+        ref_low      = lows[hook_index + 1]
+        bars_counted = 1
+        i = hook_index + 2
+        while i <= last_i and bars_counted <= TTE_MAX_CORRECTION_BARS:
+            if lows[i] < ref_low:
                 logger.debug(
                     "Bearish TTE signal bar at %d: entry=%.4f, sl=%.4f",
-                    i, lows[i], tte_sl,
+                    i, lows[i], highs[i],
                 )
                 return {
                     "tte_entry":     round(lows[i], 8),
-                    "tte_sl":        round(tte_sl, 8),
+                    "tte_sl":        round(highs[i], 8),
                     "tte_bar_index": i,
                     "entry_type":    "TTE",
                 }
+            is_tie = lows[i] <= ref_low * (1 + TTE_TIE_TOLERANCE_PCT)
+            if not is_tie:
+                bars_counted += 1
+            ref_low = min(ref_low, lows[i])
+            i += 1
 
-    # TTE signal not yet formed (correction/bounce still ongoing)
+    # No violation within the window — TTE abandoned (or still pending if
+    # the correction hasn't produced enough bars yet to exhaust the budget)
     return None

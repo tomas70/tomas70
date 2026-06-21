@@ -15,7 +15,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from analysis.market_data import get_all_timeframes
-from analysis.smc import calculate_atr, detect_market_structure, find_order_blocks, find_fvg, get_pd_zone
+from analysis.smc import (
+    calculate_atr, detect_market_structure, filter_unswept_swings, find_order_blocks,
+    find_fvg, get_pd_zone,
+)
 from analysis.ross_hook import detect_ross_hook, get_tte_entry
 from analysis.multi_timeframe import (
     _find_nearest_ob, _find_fvg_near_ob, _build_levels, SL_BUFFER_PCT, OB_PROXIMITY_ATR_MULT,
@@ -91,7 +94,11 @@ def diagnose(pair: str) -> None:
         sl = p2 * (1 - SL_BUFFER_PCT) if bias == "bullish" else p2 * (1 + SL_BUFFER_PCT)
         entry_type = "HOOK(P2)"
 
-    levels = _build_levels(bias, entry, sl, swing_highs, swing_lows, len(df_4h) - 1)
+    # TP1/TP2 target real, untapped liquidity — same filtering production uses
+    unswept_highs = filter_unswept_swings(df_4h, swing_highs)
+    unswept_lows  = filter_unswept_swings(df_4h, swing_lows)
+
+    levels = _build_levels(bias, entry, sl, unswept_highs, unswept_lows, len(df_4h) - 1)
     rr = levels["rr_ratio"]
 
     if levels["tp1_structural"]:
