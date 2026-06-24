@@ -27,6 +27,7 @@ import schedule
 import time
 
 from analysis.multi_timeframe import get_full_analysis
+from analysis.trade_logger import get_stats, log_setup, update_all_pending_outcomes
 from ai.claude_analyst import generate_setup_standalone
 from notifications.telegram_bot import format_setup_message, send_telegram
 from notifications.bot_commands import listen_for_commands
@@ -107,6 +108,8 @@ def scan_markets(silent: bool = False) -> str:
 
     logger.info("[%s] Skenuojamos rinkos | Level %d | $%.2f", now, level_info["level"], balance)
 
+    update_all_pending_outcomes()
+
     best_setup    = None
     best_decision = None
     best_rr       = 0.0
@@ -159,6 +162,7 @@ def scan_markets(silent: bool = False) -> str:
         reasoning  = best_decision.get("reasoning", "")
         message    = format_setup_message(best_setup, level_info, confidence, reasoning)
         sent       = send_telegram(message)
+        log_setup(best_setup)
         logger.info("Setup išsiųstas: %s | sent=%s", best_setup.get("pair"), sent)
         return f"✅ Setup rastas ir išsiųstas: <b>{best_setup['pair']}</b> RR=1:{best_rr:.1f}"
     else:
@@ -192,6 +196,29 @@ def handle_command(command: str, args: list[str]) -> str:
 
     if command == "/scan":
         return "🔄 Skenuoju rinkas...\n\n" + scan_markets(silent=True)
+
+    if command == "/log":
+        s = get_stats()
+        if s["total"] == 0:
+            return "📋 <b>Trade Log</b>\n\nDar nėra užrašytų setup'ų."
+        wr = f"{s['win_rate']:.1f}%" if s["win_rate"] is not None else "—"
+        lines = [
+            "📋 <b>Trade Log</b>\n",
+            f"Iš viso: {s['total']} setup'ų  |  Laukia: {s['pending']}",
+            f"Išspręsta: {s['resolved']}  →  TP1: {s['tp1_hit']}  SL: {s['sl_hit']}  Expired: {s['expired']}",
+            f"<b>Win rate: {wr}</b>\n",
+            "<b>Pagal tipą:</b>",
+        ]
+        for et, info in s["by_type"].items():
+            wr_t = f"{info['win_rate']:.1f}%" if info["win_rate"] is not None else "—"
+            lines.append(f"  {et}: {info['count']} setup'ų → {wr_t} TP1")
+        if s["ob_yes_n"] or s["ob_no_n"]:
+            lines.append("\n<b>OB confluence:</b>")
+            ob_y = f"{s['ob_yes_wr']:.1f}%" if s["ob_yes_wr"] is not None else "—"
+            ob_n = f"{s['ob_no_wr']:.1f}%"  if s["ob_no_wr"]  is not None else "—"
+            lines.append(f"  Su OB:  {s['ob_yes_n']} → {ob_y} TP1")
+            lines.append(f"  Be OB:  {s['ob_no_n']} → {ob_n} TP1")
+        return "\n".join(lines)
 
     if command == "/status":
         balance    = _load_balance()
