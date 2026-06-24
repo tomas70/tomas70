@@ -127,7 +127,7 @@ def update_all_pending_outcomes() -> int:
         sl   = float(row["sl"])
         bias = row["bias"]
 
-        after = df[df["timestamp"] > pd.Timestamp(logged_at, tz="UTC")].reset_index(drop=True)
+        after = df[df["timestamp"] > pd.Timestamp(logged_at)].reset_index(drop=True)
         if after.empty:
             continue
 
