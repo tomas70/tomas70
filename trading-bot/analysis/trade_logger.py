@@ -57,9 +57,27 @@ def _write_rows(rows: list[dict]) -> None:
 
 # ─── Public API ───────────────────────────────────────────────────────────────
 
+def _has_pending(pair: str, bias: str) -> bool:
+    """True if a pending entry already exists for this pair + direction."""
+    rows = _read_rows()
+    return any(r["pair"] == pair and r["bias"] == bias and r["status"] == "pending" for r in rows)
+
+
 def log_setup(result: dict) -> None:
-    """Appends a new pending row when the bot fires an alert."""
+    """Appends a new pending row when the bot fires an alert.
+
+    Skips if an identical pending entry (same pair + direction) already
+    exists — prevents duplicate logging when the same setup persists
+    across consecutive 15-min scans.
+    """
     _ensure_file()
+    pair = result.get("pair", "")
+    bias = result.get("bias", "")
+
+    if _has_pending(pair, bias):
+        logger.debug("trade_logger: skipping duplicate — %s %s already pending", pair, bias)
+        return
+
     hook = result.get("ross_hook") or {}
     row = {
         "id":               str(uuid.uuid4())[:8],
