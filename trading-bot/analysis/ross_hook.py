@@ -45,7 +45,7 @@ TTE_TIE_TOLERANCE_PCT = 0.0005
 # can stop out an otherwise-correct trade. ATR-scaled (not a flat %) so
 # the buffer matches each pair's own volatility, same approach already
 # used for OB proximity (OB_PROXIMITY_ATR_MULT in multi_timeframe.py).
-TTE_SL_BUFFER_ATR_MULT = 0.25
+TTE_SL_BUFFER_ATR_MULT = 0.75
 
 
 # ─── Data Classes ─────────────────────────────────────────────────────────────
