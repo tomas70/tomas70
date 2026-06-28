@@ -270,26 +270,29 @@ def get_full_analysis(pair: str) -> dict:
     # ── TTE Entry Calculation ─────────────────────────────────────────────────
     tte = get_tte_entry(df_15m, hook)
 
-    if tte:
-        # Primary: TTE entry (better price, before the crowd)
-        entry      = tte["tte_entry"]
-        sl         = tte["tte_sl"]
-        entry_type = "TTE"
-    elif nearest_ob is not None:
-        # Fallback: classic hook-level entry with OB-derived SL (when an OB
-        # confluence zone is available)
-        entry = hook["hook_level"]
-        sl    = (
+    # Structural SL: derived from OB boundary or P2 invalidation level.
+    # Live trade data (88 resolved setups) showed TTE signal-bar SL had 7%
+    # win rate vs 60% for the wider structural SL — the signal is sound but
+    # the single-bar range is too narrow for 15m crypto noise. TTE still
+    # provides the better entry price; structural SL gives the trade room.
+    if nearest_ob is not None:
+        structural_sl = (
             nearest_ob.low  * (1 - SL_BUFFER_PCT) if bias == "bullish"
             else nearest_ob.high * (1 + SL_BUFFER_PCT)
         )
-        entry_type = "HOOK"
     else:
-        # Fallback: classic hook-level entry, SL at the hook's own P2
-        # invalidation level (Joe Ross rule) — no OB confluence required
-        entry = hook["hook_level"]
-        p2    = hook["p2"].price
-        sl    = p2 * (1 - SL_BUFFER_PCT) if bias == "bullish" else p2 * (1 + SL_BUFFER_PCT)
+        p2 = hook["p2"].price
+        structural_sl = p2 * (1 - SL_BUFFER_PCT) if bias == "bullish" else p2 * (1 + SL_BUFFER_PCT)
+
+    if tte:
+        # TTE entry (earlier, better price) with structural SL
+        entry      = tte["tte_entry"]
+        sl         = structural_sl
+        entry_type = "TTE"
+    else:
+        # Hook-level entry with structural SL
+        entry      = hook["hook_level"]
+        sl         = structural_sl
         entry_type = "HOOK"
 
     # TP1/TP2 target real, untapped liquidity — a swing already closed
