@@ -1,17 +1,32 @@
 """
-Multi-timeframe analysis: Ross Hook primary, SMC confirmation, TTE entry.
+Multi-timeframe analysis: Ross Hook primary, 1H OB confirmation required.
 
 Logic flow:
   15m  → Ross Hook (1-2-3 pattern + breakout + hook)  [PRIMARY SIGNAL]
   15m  → Hook age ≤ MAX_HOOK_AGE_FOR_ALERT             [FRESHNESS FILTER]
-  15m  → TTE entry bar (Trader's Trick Entry)          [ENTRY LEVEL]
   4H   → BOS/CHoCH market structure bias               [DIRECTION FILTER]
-  1H   → Order Block near the hook/TTE area            [SMC CONFLUENCE — bonus]
-  1H   → Fair Value Gap overlap                        [SMC CONFLUENCE — bonus]
+  1H   → Order Block near current price                [CONFLUENCE — GATE]
+  1H   → Fair Value Gap overlap                        [CONTEXT — bonus]
   4H   → Premium/Discount Fibonacci zone               [CONTEXT — bonus]
   4H   → TP1/TP2 = nearest UNSWEPT 4H swing beyond entry [TARGET — real liquidity only]
   4H   → TP1 swing age                                  [CONTEXT — bonus, see below]
   All  → R:R ≥ MIN_RR_RATIO                            [RISK FILTER]
+
+Entry = hook level, SL = nearest 1H order block boundary. Two live-data
+findings changed this from earlier versions:
+
+  1. TTE (Trader's Trick Entry, an early correction-bar entry) is disabled.
+     Live trade log data showed a 7% TP1 win rate for TTE entries vs 37.5%+
+     for the plain hook-level entry — TTE was firing before the correction
+     had actually finished, catching false starts. Hook-level entry alone
+     is simpler and, empirically, better.
+  2. 1H OB confluence is now a hard gate, not bonus confirmation. Live data
+     (94 resolved setups): 17.6% win rate with OB confluence vs 5.0%
+     without. A Hook without a nearby OB is too often a false start to
+     alert on.
+
+These are empirical findings from logs/trade_log.csv (see analysis/
+trade_logger.py), not fixed rules — revisit as more data accumulates.
 
 TP1/TP2 target real, untapped liquidity: a 4H swing high/low whose level
 hasn't already been closed through (filter_unswept_swings). A swing that
@@ -19,24 +34,20 @@ price has already closed beyond no longer has resting liquidity at it, so
 even though it's still "beyond entry" by price, it isn't a meaningful
 target — the move it would have implied already happened.
 
-OB/FVG/PD-zone/TP1-age are confirmation, not the primary signal — they raise
-confidence in a Hook+TTE setup but don't block a trade on their own. TP1 age
-in particular was tried as a hard gate and reverted: an old 4H swing isn't a
+FVG/PD-zone/TP1-age are confirmation, not the primary signal — they raise
+confidence in a setup but don't block a trade on their own. TP1 age in
+particular was tried as a hard gate and reverted: an old 4H swing isn't a
 fake level just because it's old (TA levels routinely hold for weeks), and
 gating on it cost real setups (e.g. a same-day RR=6.5 BCH short rejected
 purely because its TP1 swing was 49 candles old). It's reported so the
 reader can judge for themselves whether a given high-R:R setup's target is
 "near and real" or "far and speculative" — see tp1_age_4h/tp1_stale fields.
 
-OB/FVG/PD-zone are confirmation, not the primary signal — they raise
-confidence in a Hook+TTE setup but don't block a trade on their own. A Ross
-Hook is a continuation pattern (it breaks out and keeps going), which
-conflicts with PD zone theory's mean-reversion assumption (e.g. a bearish
-continuation hook is almost always still in "discount", since it's making
-fresh new lows) — so PD zone is reported for context, not enforced as a
-gate. SL without a TTE signal falls back to the hook's own P2 invalidation
-level (Joe Ross rule), not an OB boundary, so a valid Hook setup never
-depends on SMC presence.
+PD-zone is confirmation, not the primary signal. A Ross Hook is a
+continuation pattern (it breaks out and keeps going), which conflicts with
+PD zone theory's mean-reversion assumption (e.g. a bearish continuation
+hook is almost always still in "discount", since it's making fresh new
+lows) — so PD zone is reported for context, not enforced as a gate.
 """
 import logging
 from typing import Optional
@@ -47,7 +58,7 @@ from .smc import (
     calculate_atr, detect_market_structure, filter_unswept_swings, find_fvg,
     find_order_blocks, get_pd_zone,
 )
-from .ross_hook import detect_ross_hook, get_tte_entry
+from .ross_hook import detect_ross_hook
 from config import MIN_RR_RATIO
 
 logger = logging.getLogger(__name__)
@@ -177,24 +188,20 @@ def get_full_analysis(pair: str) -> dict:
     Multi-timeframe confluence analysis.
 
     Primary: 15m Ross Hook (Joe Ross 1-2-3 + breakout + hook).
-    Entry:   TTE (Trader's Trick Entry) — first up/down bar in the correction,
-             enter at that bar's high/low BEFORE the hook level is broken.
-    SMC:     1H OB / FVG / 4H PD-zone are confluence — they raise confidence
+    Entry:   hook level (TTE disabled — see module docstring).
+    SL:      nearest 1H order block boundary.
+    Bonus:   1H FVG / 4H PD-zone are confluence — they raise confidence
              but are not required for a setup to be valid.
 
     Gates (all must pass):
       ✓ 15m Ross Hook formed and not stale
       ✓ Hook formed no more than MAX_HOOK_AGE_FOR_ALERT candles ago
       ✓ 4H market structure bias matches hook direction
+      ✓ 1H order block confluence near current price (see module docstring)
       ✓ R:R ≥ MIN_RR_RATIO
 
     TP1 age is reported (tp1_age_4h/tp1_stale) but does not gate the setup —
     see module docstring for why.
-
-    Entry source:
-      TTE signal found     → use TTE entry/SL (earlier, better R:R, Joe Ross rule)
-      TTE pending, OB near → use hook_level as entry, OB-derived SL
-      TTE pending, no OB   → use hook_level as entry, SL at hook's P2 level
     """
     # ── Data Fetch ────────────────────────────────────────────────────────────
     try:
@@ -242,7 +249,7 @@ def get_full_analysis(pair: str) -> dict:
 
     bias = hook_bias  # confirmed direction
 
-    # ── 1H Order Block + FVG (SMC confluence — bonus, not a hard gate) ────────
+    # ── 1H Order Block + FVG ──────────────────────────────────────────────────
     obs_1h     = find_order_blocks(df_1h, bias)
     active_obs = [ob for ob in obs_1h if not ob.mitigated]
 
@@ -251,6 +258,14 @@ def get_full_analysis(pair: str) -> dict:
 
     fvgs_1h        = [f for f in find_fvg(df_1h) if not f.filled and f.kind == bias]
     confluence_fvg = _find_fvg_near_ob(fvgs_1h, nearest_ob) if nearest_ob else None
+
+    # ── Gate 3: OB Confluence ─────────────────────────────────────────────────
+    # Live trade data: setups with a nearby 1H order block hit TP1 at ~2-3x
+    # the rate of setups without one (17.6% vs 5.0% across 94 resolved
+    # setups). No longer optional — a Hook without OB confluence is too
+    # often a false start.
+    if nearest_ob is None:
+        return {"valid": False, "reason": "No 1H order block confluence near current price"}
 
     # ── Premium / Discount Zone (confluence info — bonus, not a hard gate) ────
     # PD theory assumes a mean-reversion retracement entry (short the premium
@@ -267,33 +282,19 @@ def get_full_analysis(pair: str) -> dict:
     else:
         pd_info = {"zone": "unknown", "equilibrium": 0.0, "fib_pct": 0.0}
 
-    # ── TTE Entry Calculation ─────────────────────────────────────────────────
-    tte = get_tte_entry(df_15m, hook)
-
-    # Structural SL: derived from OB boundary or P2 invalidation level.
-    # Live trade data (88 resolved setups) showed TTE signal-bar SL had 7%
-    # win rate vs 60% for the wider structural SL — the signal is sound but
-    # the single-bar range is too narrow for 15m crypto noise. TTE still
-    # provides the better entry price; structural SL gives the trade room.
-    if nearest_ob is not None:
-        structural_sl = (
-            nearest_ob.low  * (1 - SL_BUFFER_PCT) if bias == "bullish"
-            else nearest_ob.high * (1 + SL_BUFFER_PCT)
-        )
-    else:
-        p2 = hook["p2"].price
-        structural_sl = p2 * (1 - SL_BUFFER_PCT) if bias == "bullish" else p2 * (1 + SL_BUFFER_PCT)
-
-    if tte:
-        # TTE entry (earlier, better price) with structural SL
-        entry      = tte["tte_entry"]
-        sl         = structural_sl
-        entry_type = "TTE"
-    else:
-        # Hook-level entry with structural SL
-        entry      = hook["hook_level"]
-        sl         = structural_sl
-        entry_type = "HOOK"
+    # ── Entry Calculation ──────────────────────────────────────────────────────
+    # TTE (early correction-bar entry) disabled: live trade data showed a 7%
+    # win rate vs 37.5%+ for the hook-level entry — TTE fires before the
+    # correction has actually finished, catching too many false starts. Hook
+    # level entry, OB-derived structural SL (OB confluence is now a gate
+    # above, so nearest_ob is always set here).
+    tte = None
+    entry      = hook["hook_level"]
+    sl         = (
+        nearest_ob.low  * (1 - SL_BUFFER_PCT) if bias == "bullish"
+        else nearest_ob.high * (1 + SL_BUFFER_PCT)
+    )
+    entry_type = "HOOK"
 
     # TP1/TP2 target real, untapped liquidity — a swing already closed
     # through doesn't have resting liquidity left at it, so it's not a
@@ -303,7 +304,7 @@ def get_full_analysis(pair: str) -> dict:
 
     levels = _build_levels(bias, entry, sl, unswept_highs, unswept_lows, len(df_4h) - 1)
 
-    # ── Gate 3: R:R Check ─────────────────────────────────────────────────────
+    # ── Gate 4: R:R Check ─────────────────────────────────────────────────────
     if levels["rr_ratio"] < MIN_RR_RATIO:
         return {
             "valid":  False,

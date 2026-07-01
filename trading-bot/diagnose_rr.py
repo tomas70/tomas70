@@ -2,8 +2,10 @@
 Diagnostics: shows what RR_ratio each pair WOULD have if it passed all
 other gates, without enforcing MIN_RR_RATIO. Helps decide whether to
 lower MIN_RR_RATIO from 3.0, and identifies which gate is the real
-bottleneck (Hook / 4H bias) for each pair. OB/FVG/PD-zone are reported
-as confluence info only — they're bonus confirmation, not hard gates.
+bottleneck (Hook / 4H bias / OB) for each pair. Mirrors production logic
+in multi_timeframe.py: OB confluence is a hard gate, TTE is disabled
+(see that module's docstring for the live-data rationale). FVG/PD-zone
+are reported as confluence info only — bonus, not gates.
 
 Usage (on the Mac where the bot runs):
     cd /Users/tomassipelis/trading-bot
@@ -19,7 +21,7 @@ from analysis.smc import (
     calculate_atr, detect_market_structure, filter_unswept_swings, find_order_blocks,
     find_fvg, get_pd_zone,
 )
-from analysis.ross_hook import detect_ross_hook, get_tte_entry
+from analysis.ross_hook import detect_ross_hook
 from analysis.multi_timeframe import (
     _find_nearest_ob, _find_fvg_near_ob, _build_levels, SL_BUFFER_PCT, OB_PROXIMITY_ATR_MULT,
     MAX_HOOK_AGE_FOR_ALERT, TP1_MAX_AGE_4H,
@@ -59,7 +61,7 @@ def diagnose(pair: str) -> None:
         return
     bias = hook_bias
 
-    # OB / FVG: confluence only, not a hard gate
+    # OB: hard gate in production (see multi_timeframe.py docstring)
     obs_1h     = find_order_blocks(df_1h, bias)
     active_obs = [ob for ob in obs_1h if not ob.mitigated]
     atr_1h     = calculate_atr(df_1h)
@@ -80,19 +82,14 @@ def diagnose(pair: str) -> None:
     else:
         pd_info = {"zone": "unknown"}
 
-    tte = get_tte_entry(df_15m, hook)
-    if tte:
-        entry, sl, entry_type = tte["tte_entry"], tte["tte_sl"], "TTE"
-    elif nearest_ob is not None:
-        entry = hook["hook_level"]
-        sl = (nearest_ob.low * (1 - SL_BUFFER_PCT) if bias == "bullish"
-              else nearest_ob.high * (1 + SL_BUFFER_PCT))
-        entry_type = "HOOK(OB)"
-    else:
-        entry = hook["hook_level"]
-        p2 = hook["p2"].price
-        sl = p2 * (1 - SL_BUFFER_PCT) if bias == "bullish" else p2 * (1 + SL_BUFFER_PCT)
-        entry_type = "HOOK(P2)"
+    if nearest_ob is None:
+        print(f"{pair:6} | hook={hook_bias:7} 4H={bias_4h:7} {ob_label} | ❌ no OB confluence")
+        return
+
+    entry = hook["hook_level"]
+    sl = (nearest_ob.low * (1 - SL_BUFFER_PCT) if bias == "bullish"
+          else nearest_ob.high * (1 + SL_BUFFER_PCT))
+    entry_type = "HOOK"
 
     # TP1/TP2 target real, untapped liquidity — same filtering production uses
     unswept_highs = filter_unswept_swings(df_4h, swing_highs)
@@ -120,7 +117,7 @@ if __name__ == "__main__":
     for pair in PAIRS:
         diagnose(pair)
 
-    print("\nLegend: ✅ RR>=3.0  🟡 RR>=2.0  🔴 RR<2.0  |  OB/FVG/PD = bonus confluence, not a gate")
+    print("\nLegend: ✅ RR>=3.0  🟡 RR>=2.0  🔴 RR<2.0  |  OB = hard gate  |  FVG/PD = bonus confluence, not a gate")
     print(f"        tp1_age = candles since the 4H swing used for TP1 (⚠️stale if > {TP1_MAX_AGE_4H} candles — info only, not a gate)")
     print("        tp1=fallback% = no 4H swing beyond entry, TP1 is a flat % guess — info only, not a gate")
     print(f"        hook_age = 15m candles since the Ross Hook formed (⚠️stale if > {MAX_HOOK_AGE_FOR_ALERT} candles — HARD GATE in production)")
