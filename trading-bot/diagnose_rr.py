@@ -22,6 +22,7 @@ from analysis.smc import (
     find_fvg, get_pd_zone,
 )
 from analysis.ross_hook import detect_ross_hook
+from analysis.global_trend import check_global_trend
 from analysis.multi_timeframe import (
     _find_nearest_ob, _find_fvg_near_ob, _build_levels, SL_BUFFER_PCT, OB_PROXIMITY_ATR_MULT,
     MAX_HOOK_AGE_FOR_ALERT, TP1_MAX_AGE_4H,
@@ -104,10 +105,18 @@ def diagnose(pair: str) -> None:
     else:
         tp1_label = "tp1=fallback%⚠️"
 
+    # Global trend: hard gate in production. Shown either way so a setup
+    # rejected only by the daily trend is still visible for tuning.
+    gt = check_global_trend(pair, bias)
+    gt_label = (
+        f"1D={gt['daily_bias'][:4]}/BTC={gt['market_regime'][:4]}"
+        + ("" if gt["ok"] else " ❌GLOBAL")
+    )
+
     flag = "✅" if rr >= 3.0 else ("🟡" if rr >= 2.0 else "🔴")
     print(
         f"{pair:6} | hook={hook_bias:7} 4H={bias_4h:7} {ob_label} {fvg_label} pd={pd_info['zone']:11} "
-        f"| {entry_type:8} entry={entry:.4f} sl={sl:.4f} | RR={rr:.2f} {flag} | {tp1_label} | {hook_age_label}"
+        f"| {entry_type:8} entry={entry:.4f} sl={sl:.4f} | RR={rr:.2f} {flag} | {tp1_label} | {hook_age_label} | {gt_label}"
     )
 
 
@@ -121,4 +130,5 @@ if __name__ == "__main__":
     print(f"        tp1_age = candles since the 4H swing used for TP1 (⚠️stale if > {TP1_MAX_AGE_4H} candles — info only, not a gate)")
     print("        tp1=fallback% = no 4H swing beyond entry, TP1 is a flat % guess — info only, not a gate")
     print(f"        hook_age = 15m candles since the Ross Hook formed (⚠️stale if > {MAX_HOOK_AGE_FOR_ALERT} candles — HARD GATE in production)")
-    print("        NOTE: this script shows setups even if they'd fail the hook freshness gate, for tuning")
+    print("        1D/BTC = pair daily trend / BTC daily regime; ❌GLOBAL = setup opposes one of them (HARD GATE in production)")
+    print("        NOTE: this script shows setups even if they'd fail the hook freshness or global trend gates, for tuning")

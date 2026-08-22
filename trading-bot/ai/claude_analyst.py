@@ -39,10 +39,15 @@ Privalomi laukai:
 }
 
 Jei confidence < 7 arba setup'as silpnas — nustatyk "skip": true.
-TTE įėjimas yra geresnis nei Hook įėjimas — vertink jį aukščiau.
+Įėjimas visada yra Hook lygyje. TTE (Trader's Trick Entry) išjungtas: realių \
+sandorių duomenys parodė 7% TP1 pasiekimą prieš 37.5%+ Hook įėjimui — TTE \
+suveikdavo dar nepasibaigus korekcijai. Nevertink TTE nebuvimo kaip trūkumo.
 Jei TP1 pažymėtas kaip "⚠️ NE struktūrinis" arba "⚠️ senas 4H lygis" — aukštas R:R \
 nereiškia stipraus setup'o, nes tikslas nėra šviežia struktūrinė riba. Tokiu atveju \
-vertink confidence kritiškiau, nebent kiti faktoriai (OB/FVG, hook amžius) kompensuoja."""
+vertink confidence kritiškiau, nebent kiti faktoriai (OB/FVG, hook amžius) kompensuoja.
+Globalus trendas (1D poros trendas + BTC režimas) jau patikrintas — setup'as jo \
+neprieštarauja. Jei abu sutampa su kryptimi, tai stiprina setup'ą; jei kuris nors \
+"ranging" — tai neutralu, ne trūkumas."""
 
 
 # ─── Context Builder ──────────────────────────────────────────────────────────
@@ -61,12 +66,10 @@ def build_analysis_context(analysis: dict, position: dict) -> str:
     rr         = analysis.get("rr_ratio", 0)
     sl_pct     = analysis.get("sl_pct", 0)
     tp1_pct    = analysis.get("tp1_pct", 0)
-    entry_type = analysis.get("entry_type", "HOOK")
 
     ob      = analysis.get("order_block")
     fvg     = analysis.get("fvg")
     hook    = analysis.get("ross_hook", {}) or {}
-    tte     = analysis.get("tte")
     struct  = analysis.get("structure_4h", {}) or {}
     pd_info = analysis.get("pd_zone", {}) or {}
 
@@ -98,17 +101,9 @@ def build_analysis_context(analysis: dict, position: dict) -> str:
     else:
         tp1_quality = f"šviežias 4H lygis (prieš {tp1_age} žvakių)"
 
-    if tte:
-        tte_line    = (
-            f"  TTE įėjimas: ${_v(tte,'tte_entry',entry):,.4f}  "
-            f"(signalas @ baro {_v(tte,'tte_bar_index','?')})"
-        )
-        tte_sl_line = f"  TTE SL:      ${_v(tte,'tte_sl',sl):,.4f}  (korekcijos žemuma)"
-        entry_label = "TTE (Trader's Trick Entry)"
-    else:
-        tte_line    = "  TTE:         dar nesusiformavęs — laukiama signalo baro"
-        tte_sl_line = f"  SL (Hook):   ${sl:,.4f}  (OB riba)"
-        entry_label = "HOOK (klasikinis)"
+    gt            = analysis.get("global_trend") or {}
+    daily_bias    = gt.get("daily_bias", "?")
+    market_regime = gt.get("market_regime", "?")
 
     level      = position.get("level", 1)
     risk_usd   = position.get("risk_usd", 0)
@@ -125,15 +120,16 @@ def build_analysis_context(analysis: dict, position: dict) -> str:
         f"  Kryptis (4H):  {bias}  [{bos_label} patvirtintas]",
         f"  PD zona:       {pd_zone}  (Fib {fib_pct:.1f}%)",
         f"",
+        f"  ── GLOBALUS TRENDAS ──",
+        f"  1D poros:      {daily_bias.upper()}",
+        f"  BTC režimas:   {market_regime.upper()}",
+        f"",
         f"  ── JOE ROSS 1-2-3 + HOOK (15m) ──",
         f"  Hook lygis:    ${hook.get('hook_level', 0):,.4f}",
         f"  Susiformavo:   prieš {hook_ago} žvakių",
         f"  Kryptis:       {hook.get('pattern','?').upper()}  ✓",
-        f"",
-        f"  ── TRADER'S TRICK ENTRY (TTE) ──",
-        tte_line,
-        tte_sl_line,
-        f"  Įėjimo tipas:  {entry_label}",
+        f"  Įėjimas:       Hook lygis (TTE išjungtas)",
+        f"  SL:            ${sl:,.4f}  (OB riba)",
         f"",
         f"  ── SMC PATVIRTINIMAS (1H) ──",
         f"  Order Block:   {ob_range}",

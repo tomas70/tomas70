@@ -43,7 +43,7 @@ def format_setup_message(
     ob        = setup.get("order_block")
     fvg       = setup.get("fvg")
     hook      = setup.get("ross_hook") or {}
-    tte       = setup.get("tte")
+    gt        = setup.get("global_trend") or {}
     struct    = setup.get("structure_4h") or {}
     risk_usd  = setup.get("risk_usd", 0)
     pos_usd   = setup.get("position_usd", 0)
@@ -74,10 +74,8 @@ def format_setup_message(
     hook_ago     = hook.get("candles_ago", 0)
     ob_range     = f"${_v(ob,'low',0):,.2f}–${_v(ob,'high',0):,.2f}" if ob else "N/A"
     entry_label  = "🎯 TTE" if entry_type == "TTE" else "📍 Hook"
-    tte_note     = (
-        f"\n  TTE SL:  <code>${_v(tte,'tte_sl',sl):,.2f}</code>  (korekcijos žemuma)"
-        if tte else ""
-    )
+    daily_bias   = gt.get("daily_bias", "?")
+    market_reg   = gt.get("market_regime", "?")
 
     sl_sign  = "-" if bias == "LONG" else "+"
     tp1_sign = "+" if bias == "LONG" else "-"
@@ -95,11 +93,11 @@ def format_setup_message(
         f"🎯 <b>TRADING SETUP — {pair}/USDC  (Hyperliquid)</b>\n"
         f"\n"
         f"📊 <b>BIAS:</b> {bias} {bias_arrow}  |  {entry_label}\n"
-        f"⏱ 15m Hook + TTE | 4H struktūra | 1H SMC OB\n"
+        f"⏱ 15m Hook | 4H struktūra | 1H SMC OB | 1D trendas\n"
         f"\n"
         f"💰 <b>POZICIJA:</b>\n"
         f"  Entry:  <code>${entry:,.4f}</code>\n"
-        f"  SL:     <code>${sl:,.4f}</code>  ({sl_sign}{sl_pct:.2f}%){tte_note}\n"
+        f"  SL:     <code>${sl:,.4f}</code>  ({sl_sign}{sl_pct:.2f}%)\n"
         f"  TP1:    <code>${tp1:,.4f}</code>  ({tp1_sign}{tp1_pct:.2f}%)  {tp1_quality}\n"
         f"  TP2:    <code>${tp2:,.4f}</code>\n"
         f"  R:R  =  1:{rr:.1f}\n"
@@ -114,6 +112,10 @@ def format_setup_message(
         f"  4H {bos_label}\n"
         f"  OB zona:   {ob_range} ✓\n"
         f"  FVG:       {fvg_label}\n"
+        f"\n"
+        f"🌍 <b>GLOBALUS TRENDAS:</b>\n"
+        f"  1D poros:  {daily_bias} ✓\n"
+        f"  BTC:       {market_reg} ✓\n"
         f"\n"
         f"⚠️ <b>INVALIDATION:</b> {'žemiau' if bias == 'LONG' else 'virš'} "
         f"<code>${sl:,.4f}</code> (SL lygis)\n"

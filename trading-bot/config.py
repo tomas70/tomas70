@@ -22,8 +22,20 @@ PAIRS: list[str] = [
     "APT", "ARB", "OP", "TON", "UNI",
 ]
 
-# Timeframes
+# Timeframes fetched for every pair on every scan
 TIMEFRAMES: list[str] = ["15m", "1h", "4h"]
+
+# Higher timeframe used for the global trend filter. Fetched lazily — only
+# for setups that already passed the cheaper 15m/4H/OB/RR gates — so a scan
+# adds a handful of requests, not one per pair.
+GLOBAL_TREND_TIMEFRAME: str = "1d"
+
+# Everything market_data is allowed to fetch (TIMEFRAMES + lazy ones)
+SUPPORTED_TIMEFRAMES: list[str] = [*TIMEFRAMES, GLOBAL_TREND_TIMEFRAME]
+
+# Pair whose trend defines the market-wide regime. Alts follow BTC closely,
+# so an alt long during a BTC downtrend fights the dominant flow.
+MARKET_LEADER_PAIR: str = "BTC"
 
 # Data settings
 CANDLES_LIMIT: int = 200

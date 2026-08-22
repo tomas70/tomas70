@@ -29,6 +29,7 @@ COLUMNS = [
     "entry", "sl", "tp1", "tp2", "rr_ratio",
     "ob_confluence", "fvg_confluence", "pd_zone",
     "tp1_structural", "tp1_age_4h", "hook_candles_ago",
+    "daily_bias", "market_regime",
     "status", "outcome_at", "outcome_candles",
 ]
 
@@ -36,10 +37,31 @@ COLUMNS = [
 # ─── Internal helpers ─────────────────────────────────────────────────────────
 
 def _ensure_file() -> None:
+    """
+    Creates the log file if missing, and migrates it in place when COLUMNS
+    has grown since the file was written. Without the migration, appending
+    with the new field order to a file carrying the old header would write
+    values into the wrong columns.
+    """
     LOG_FILE.parent.mkdir(exist_ok=True)
+
     if not LOG_FILE.exists():
         with open(LOG_FILE, "w", newline="") as f:
             csv.DictWriter(f, fieldnames=COLUMNS).writeheader()
+        return
+
+    with open(LOG_FILE, newline="") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames == COLUMNS:
+            return
+        old_rows = list(reader)
+
+    logger.info("trade_log.csv: migrating to %d columns", len(COLUMNS))
+    with open(LOG_FILE, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=COLUMNS, restval="")
+        w.writeheader()
+        for row in old_rows:
+            w.writerow({k: row.get(k, "") for k in COLUMNS})
 
 
 def _read_rows() -> list[dict]:
@@ -79,6 +101,7 @@ def log_setup(result: dict) -> None:
         return
 
     hook = result.get("ross_hook") or {}
+    gt   = result.get("global_trend") or {}
     row = {
         "id":               str(uuid.uuid4())[:8],
         "logged_at":        datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -96,6 +119,8 @@ def log_setup(result: dict) -> None:
         "tp1_structural":   result.get("tp1_structural", ""),
         "tp1_age_4h":       result.get("tp1_age_4h", ""),
         "hook_candles_ago": hook.get("candles_ago", ""),
+        "daily_bias":       gt.get("daily_bias", ""),
+        "market_regime":    gt.get("market_regime", ""),
         "status":           "pending",
         "outcome_at":       "",
         "outcome_candles":  "",

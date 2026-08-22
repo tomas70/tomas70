@@ -5,12 +5,19 @@ from typing import Optional
 import httpx
 import pandas as pd
 
-from config import CANDLES_LIMIT, PAIRS, TIMEFRAMES
+from config import CANDLES_LIMIT, PAIRS, SUPPORTED_TIMEFRAMES, TIMEFRAMES
 
 logger = logging.getLogger(__name__)
 
 HL_BASE_URL       = "https://api.hyperliquid.xyz/info"
 CACHE_TTL_SECONDS = 60 * 14  # refresh if older than 14 minutes
+
+# A full scan fires ~60 requests at Hyperliquid in a few seconds (20 pairs x
+# 3 timeframes), which is enough to draw an occasional 429 or transient 5xx.
+# Those are retried with exponential backoff rather than surfacing as a
+# "Data fetch error" for the pair.
+MAX_RETRIES      = 3
+RETRY_BASE_DELAY = 1.0  # seconds; doubles each attempt (1s, 2s, 4s)
 
 # In-memory cache: {(pair, timeframe): (DataFrame, monotonic_timestamp)}
 _cache: dict[tuple[str, str], tuple[pd.DataFrame, float]] = {}
@@ -31,6 +38,38 @@ _INTERVAL_MS: dict[str, int] = {
 }
 
 
+def _is_retryable(exc: Exception) -> bool:
+    """True for transient failures worth a retry: rate limits, 5xx, network."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code == 429 or exc.response.status_code >= 500
+    return isinstance(exc, httpx.RequestError)  # timeouts, connection resets
+
+
+def _post_with_retry(payload: dict, timeout: int = 10) -> httpx.Response:
+    """POSTs to Hyperliquid, retrying transient errors with exponential backoff."""
+    last_exc: Exception = RuntimeError("no attempt made")
+
+    for attempt in range(MAX_RETRIES):
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                response = client.post(HL_BASE_URL, json=payload)
+                response.raise_for_status()
+            return response
+
+        except Exception as exc:
+            last_exc = exc
+            if not _is_retryable(exc) or attempt == MAX_RETRIES - 1:
+                raise
+            delay = RETRY_BASE_DELAY * (2 ** attempt)
+            logger.warning(
+                "Hyperliquid request failed (%s), retry %d/%d in %.0fs",
+                exc, attempt + 1, MAX_RETRIES - 1, delay,
+            )
+            time.sleep(delay)
+
+    raise last_exc
+
+
 def _fetch_from_hyperliquid(pair: str, timeframe: str, limit: int) -> pd.DataFrame:
     """Calls Hyperliquid public candleSnapshot endpoint — no API key required."""
     end_ms   = int(time.time() * 1000)
@@ -47,9 +86,7 @@ def _fetch_from_hyperliquid(pair: str, timeframe: str, limit: int) -> pd.DataFra
         },
     }
 
-    with httpx.Client(timeout=10) as client:
-        response = client.post(HL_BASE_URL, json=payload)
-        response.raise_for_status()
+    response = _post_with_retry(payload)
 
     candles = response.json()
     if not candles:
@@ -84,8 +121,8 @@ def get_ohlcv(
     """
     if pair not in PAIRS:
         raise ValueError(f"Unsupported pair: {pair}. Allowed: {PAIRS}")
-    if timeframe not in TIMEFRAMES:
-        raise ValueError(f"Unsupported timeframe: {timeframe}. Allowed: {TIMEFRAMES}")
+    if timeframe not in SUPPORTED_TIMEFRAMES:
+        raise ValueError(f"Unsupported timeframe: {timeframe}. Allowed: {SUPPORTED_TIMEFRAMES}")
 
     cache_key = (pair, timeframe)
     now = time.monotonic()
@@ -111,9 +148,7 @@ def get_ohlcv(
 
 def get_current_price(pair: str) -> float:
     """Fetches the latest mid price from Hyperliquid — no API key required."""
-    with httpx.Client(timeout=5) as client:
-        response = client.post(HL_BASE_URL, json={"type": "allMids"})
-        response.raise_for_status()
+    response = _post_with_retry({"type": "allMids"}, timeout=5)
     mids = response.json()
     if pair not in mids:
         raise ValueError(f"Price not found for {pair} on Hyperliquid")

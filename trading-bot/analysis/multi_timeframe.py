@@ -11,6 +11,7 @@ Logic flow:
   4H   → TP1/TP2 = nearest UNSWEPT 4H swing beyond entry [TARGET — real liquidity only]
   4H   → TP1 swing age                                  [CONTEXT — bonus, see below]
   All  → R:R ≥ MIN_RR_RATIO                            [RISK FILTER]
+  1D   → pair daily trend + BTC daily regime           [GLOBAL TREND — GATE]
 
 Entry = hook level, SL = nearest 1H order block boundary. Two live-data
 findings changed this from earlier versions:
@@ -24,6 +25,13 @@ findings changed this from earlier versions:
      (94 resolved setups): 17.6% win rate with OB confluence vs 5.0%
      without. A Hook without a nearby OB is too often a false start to
      alert on.
+
+The 4H bias gate keeps a setup aligned with its intermediate trend, but a
+4H leg can still be a countertrend bounce inside a daily downtrend, and an
+alt can look clean while BTC drags the whole market the other way. The
+global trend gate (analysis/global_trend.py) rejects a setup that opposes
+either the pair's own daily structure or BTC's — a "ranging" daily reading
+is treated as neutral, not as a block.
 
 These are empirical findings from logs/trade_log.csv (see analysis/
 trade_logger.py), not fixed rules — revisit as more data accumulates.
@@ -59,6 +67,7 @@ from .smc import (
     find_order_blocks, get_pd_zone,
 )
 from .ross_hook import detect_ross_hook
+from .global_trend import check_global_trend
 from config import MIN_RR_RATIO
 
 logger = logging.getLogger(__name__)
@@ -199,6 +208,7 @@ def get_full_analysis(pair: str) -> dict:
       ✓ 4H market structure bias matches hook direction
       ✓ 1H order block confluence near current price (see module docstring)
       ✓ R:R ≥ MIN_RR_RATIO
+      ✓ Setup direction doesn't oppose the pair's daily trend or BTC's
 
     TP1 age is reported (tp1_age_4h/tp1_stale) but does not gate the setup —
     see module docstring for why.
@@ -311,10 +321,19 @@ def get_full_analysis(pair: str) -> dict:
             "reason": f"R:R {levels['rr_ratio']:.1f} below minimum {MIN_RR_RATIO:.1f}",
         }
 
+    # ── Gate 5: Global Trend ──────────────────────────────────────────────────
+    # Checked last on purpose: it's the only gate that fetches extra data
+    # (daily candles for this pair + BTC), so it only runs for setups that
+    # already cleared everything cheaper.
+    global_trend = check_global_trend(pair, bias)
+    if not global_trend["ok"]:
+        return {"valid": False, "reason": global_trend["reason"]}
+
     logger.info(
-        "Valid setup: %s %s [%s] | entry=%.5f SL=%.5f TP1=%.5f RR=%.2f",
+        "Valid setup: %s %s [%s] | entry=%.5f SL=%.5f TP1=%.5f RR=%.2f | 1D=%s BTC=%s",
         pair, bias.upper(), entry_type,
         levels["entry"], levels["sl"], levels["tp1"], levels["rr_ratio"],
+        global_trend["daily_bias"], global_trend["market_regime"],
     )
 
     return {
@@ -333,5 +352,6 @@ def get_full_analysis(pair: str) -> dict:
         "ross_hook":     hook,
         "tte":           tte,
         "pd_zone":       pd_info,
+        "global_trend":  global_trend,
         **levels,
     }
