@@ -1,20 +1,30 @@
 """
-Multi-timeframe analysis: Ross Hook primary, 1H OB confirmation required.
+Multi-timeframe analysis over two setup types, sharing one context and
+risk framework.
 
-Logic flow:
-  15m  → Ross Hook (1-2-3 pattern + breakout + hook)  [PRIMARY SIGNAL]
-  15m  → Hook age ≤ MAX_HOOK_AGE_FOR_ALERT             [FRESHNESS FILTER]
-  4H   → BOS/CHoCH market structure bias               [DIRECTION FILTER]
-  1H   → Order Block near current price                [CONFLUENCE — GATE]
-  1H   → Fair Value Gap overlap                        [CONTEXT — bonus]
+  HOOK  (continuation) — 15m Ross Hook: 1-2-3 → breakout → hook retest.
+      Entry at the hook level, SL from the 1H order block boundary.
+      Requires strict 4H agreement and 1H OB confluence.
+
+  SWEEP (reversal) — yesterday's high/low is wicked and reclaimed, a
+      displacement candle confirms the rejection, entry is the retest of
+      the FVG that displacement left behind, SL beyond the sweep extreme.
+      4H only has to not actively oppose the direction.
+
+The two are opposite readings of the same event — price arriving at a
+level. A CLOSE beyond it is continuation; a WICK beyond it that closes
+back is a stop hunt. Requiring both at once would be near-contradictory,
+so they're separate paths: HOOK is tried first (it has live win-rate data
+behind it), SWEEP only when no hook qualifies.
+
+Shared pipeline for whichever setup is found:
   4H   → Premium/Discount Fibonacci zone               [CONTEXT — bonus]
   4H   → TP1/TP2 = nearest UNSWEPT 4H swing beyond entry [TARGET — real liquidity only]
   4H   → TP1 swing age                                  [CONTEXT — bonus, see below]
   All  → R:R ≥ MIN_RR_RATIO                            [RISK FILTER]
   1D   → pair daily trend + BTC daily regime           [GLOBAL TREND — GATE]
 
-Entry = hook level, SL = nearest 1H order block boundary. Two live-data
-findings changed this from earlier versions:
+Two live-data findings shaped the HOOK path in particular:
 
   1. TTE (Trader's Trick Entry, an early correction-bar entry) is disabled.
      Live trade log data showed a 7% TP1 win rate for TTE entries vs 37.5%+
@@ -68,6 +78,9 @@ from .smc import (
 )
 from .ross_hook import detect_ross_hook
 from .global_trend import check_global_trend
+from .liquidity import (
+    detect_sweep, find_displacement_in_range, find_entry_fvg, get_previous_day_range,
+)
 from config import MIN_RR_RATIO
 
 logger = logging.getLogger(__name__)
@@ -190,25 +203,178 @@ def _build_levels(
     }
 
 
+# ─── Setup Finders ────────────────────────────────────────────────────────────
+#
+# Two setups, deliberately kept separate. They are opposite readings of the
+# same event — price arriving at a level — and requiring both at once would
+# be near-contradictory:
+#
+#   HOOK  (continuation): price CLOSED beyond the level and kept going.
+#   SWEEP (reversal):     price WICKED beyond the level and closed back.
+#
+# Each returns (setup_dict, reason). setup_dict is None when the setup
+# doesn't apply, with `reason` explaining which condition failed.
+
+def _try_hook_setup(
+    df_15m,
+    df_1h,
+    bias_4h: str,
+    current_price: float,
+) -> tuple[Optional[dict], str]:
+    """
+    Ross Hook continuation setup: 1-2-3 → breakout → hook → retest.
+
+    Entry at the hook level, SL from the 1H order block boundary. Requires
+    strict 4H agreement (a continuation trade against the intermediate
+    trend is just a countertrend trade) and OB confluence, which live data
+    showed matters a lot here (17.6% vs 5.0% win rate).
+    """
+    hook = detect_ross_hook(df_15m)
+    if not hook["formation_complete"]:
+        return None, "No completed Ross Hook on 15m"
+
+    bias = hook["pattern"]
+
+    if hook["candles_ago"] > MAX_HOOK_AGE_FOR_ALERT:
+        return None, f"Hook too old ({hook['candles_ago']} candles, max {MAX_HOOK_AGE_FOR_ALERT})"
+
+    if bias_4h == "ranging":
+        return None, "4H market structure is ranging"
+
+    if bias != bias_4h:
+        return None, f"15m Ross Hook is {bias} but 4H bias is {bias_4h}"
+
+    obs_1h     = find_order_blocks(df_1h, bias)
+    active_obs = [ob for ob in obs_1h if not ob.mitigated]
+    atr_1h     = calculate_atr(df_1h)
+    nearest_ob = _find_nearest_ob(active_obs, current_price, bias, atr_1h) if active_obs else None
+
+    if nearest_ob is None:
+        return None, "No 1H order block confluence near current price"
+
+    fvgs_1h = [f for f in find_fvg(df_1h) if not f.filled and f.kind == bias]
+
+    return {
+        "bias":        bias,
+        "entry":       hook["hook_level"],
+        "sl": (
+            nearest_ob.low  * (1 - SL_BUFFER_PCT) if bias == "bullish"
+            else nearest_ob.high * (1 + SL_BUFFER_PCT)
+        ),
+        "entry_type":  "HOOK",
+        "ross_hook":   hook,
+        "order_block": nearest_ob,
+        "fvg":         _find_fvg_near_ob(fvgs_1h, nearest_ob),
+        "sweep":       None,
+    }, ""
+
+
+def _try_sweep_setup(
+    df_15m,
+    df_1h,
+    bias_4h: str,
+    current_price: float,
+) -> tuple[Optional[dict], str]:
+    """
+    Liquidity sweep reversal: yesterday's level is wicked and reclaimed,
+    a displacement candle confirms the rejection, and entry is the retest
+    of the FVG that displacement left behind.
+
+    The 4H filter here is deliberately looser than the hook setup's. A
+    reversal off a swept level is often the first move against a stale 4H
+    reading, so this only requires 4H to not be actively opposed — a
+    "ranging" 4H is fine. Demanding strict agreement would reject the
+    setup exactly when it's most useful.
+    """
+    prev_day = get_previous_day_range(df_15m)
+    if prev_day is None:
+        return None, "No complete previous day in 15m data"
+
+    atr_15m = calculate_atr(df_15m)
+    if atr_15m <= 0:
+        return None, "15m ATR unavailable"
+
+    # A swept LOW is bullish (sell-side liquidity taken, buyers stepped in)
+    candidates = [
+        ("bullish", prev_day["low"],  "prev_day_low"),
+        ("bearish", prev_day["high"], "prev_day_high"),
+    ]
+
+    for bias, level, level_name in candidates:
+        if bias_4h != "ranging" and bias_4h != bias:
+            continue  # 4H actively opposes this direction
+
+        sweep = detect_sweep(df_15m, level, bias, level_name)
+        if sweep is None:
+            continue
+
+        disp_i = find_displacement_in_range(df_15m, sweep.index, bias, atr_15m)
+        if disp_i is None:
+            continue  # level was reclaimed but nobody committed to the move
+
+        # Entry: retest of the imbalance the displacement left, at its
+        # proximal edge (the side price reaches first on the retrace).
+        # No FVG means the impulse was continuous — fall back to the
+        # reclaimed level itself, which is the same idea one step wider.
+        entry_fvg = find_entry_fvg(df_15m, bias, disp_i)
+        if entry_fvg is not None:
+            entry = entry_fvg.top if bias == "bullish" else entry_fvg.bottom
+        else:
+            entry = level
+
+        # Invalidation is the sweep extreme: if price trades back through
+        # it, the level did not hold and the premise is gone.
+        sweep_low  = float(df_15m["low"].iloc[sweep.index])
+        sweep_high = float(df_15m["high"].iloc[sweep.index])
+        sl = (
+            sweep_low  * (1 - SL_BUFFER_PCT) if bias == "bullish"
+            else sweep_high * (1 + SL_BUFFER_PCT)
+        )
+
+        obs_1h     = find_order_blocks(df_1h, bias)
+        active_obs = [ob for ob in obs_1h if not ob.mitigated]
+        atr_1h     = calculate_atr(df_1h)
+        nearest_ob = _find_nearest_ob(active_obs, current_price, bias, atr_1h) if active_obs else None
+
+        return {
+            "bias":        bias,
+            "entry":       entry,
+            "sl":          sl,
+            "entry_type":  "SWEEP",
+            "ross_hook":   None,
+            "order_block": nearest_ob,   # info only for this setup, not a gate
+            "fvg":         entry_fvg,
+            "sweep": {
+                "level":       sweep.level,
+                "level_name":  sweep.level_name,
+                "candles_ago": sweep.candles_ago,
+                "displacement_index": disp_i,
+                "has_fvg":     entry_fvg is not None,
+            },
+        }, ""
+
+    return None, "No sweep setup (needs reclaimed daily level + displacement, 4H not opposing)"
+
+
 # ─── Main Analysis Entry Point ────────────────────────────────────────────────
 
 def get_full_analysis(pair: str) -> dict:
     """
-    Multi-timeframe confluence analysis.
+    Multi-timeframe confluence analysis over two setup types.
 
-    Primary: 15m Ross Hook (Joe Ross 1-2-3 + breakout + hook).
-    Entry:   hook level (TTE disabled — see module docstring).
-    SL:      nearest 1H order block boundary.
-    Bonus:   1H FVG / 4H PD-zone are confluence — they raise confidence
-             but are not required for a setup to be valid.
+    HOOK  — Ross Hook continuation: 1-2-3 → breakout → hook retest.
+            Strict 4H agreement + 1H OB confluence required.
+    SWEEP — Liquidity sweep reversal: yesterday's high/low is wicked and
+            reclaimed, displacement confirms, entry on the FVG retest.
+            Looser 4H filter (must not actively oppose).
 
-    Gates (all must pass):
-      ✓ 15m Ross Hook formed and not stale
-      ✓ Hook formed no more than MAX_HOOK_AGE_FOR_ALERT candles ago
-      ✓ 4H market structure bias matches hook direction
-      ✓ 1H order block confluence near current price (see module docstring)
+    HOOK is tried first (it has live win-rate data behind it); SWEEP is
+    only evaluated when no hook setup qualifies, so the two never compete
+    for the same bar.
+
+    Shared gates (both setups):
       ✓ R:R ≥ MIN_RR_RATIO
-      ✓ Setup direction doesn't oppose the pair's daily trend or BTC's
+      ✓ Direction doesn't oppose the pair's daily trend or BTC's
 
     TP1 age is reported (tp1_age_4h/tp1_stale) but does not gate the setup —
     see module docstring for why.
@@ -229,53 +395,24 @@ def get_full_analysis(pair: str) -> dict:
 
     current_price = float(df_15m["close"].iloc[-1])
 
-    # ── Gate 1: 15m Ross Hook ─────────────────────────────────────────────────
-    hook = detect_ross_hook(df_15m)
-
-    if not hook["formation_complete"]:
-        return {"valid": False, "reason": "No completed Ross Hook on 15m"}
-
-    hook_bias = hook["pattern"]  # "bullish" | "bearish"
-
-    # ── Gate 1b: Hook Freshness ───────────────────────────────────────────────
-    if hook["candles_ago"] > MAX_HOOK_AGE_FOR_ALERT:
-        return {
-            "valid":  False,
-            "reason": f"Hook signal too old ({hook['candles_ago']} candles, max {MAX_HOOK_AGE_FOR_ALERT})",
-        }
-
-    # ── Gate 2: 4H Structure Bias ─────────────────────────────────────────────
+    # ── Shared Context: 4H Structure ──────────────────────────────────────────
     structure_4h = detect_market_structure(df_4h)
     bias_4h      = structure_4h["bias"]
 
-    if bias_4h == "ranging":
-        return {"valid": False, "reason": "4H market structure is ranging"}
+    # ── Setup Selection ───────────────────────────────────────────────────────
+    setup, hook_reason = _try_hook_setup(df_15m, df_1h, bias_4h, current_price)
+    if setup is None:
+        setup, sweep_reason = _try_sweep_setup(df_15m, df_1h, bias_4h, current_price)
+        if setup is None:
+            return {"valid": False, "reason": f"{hook_reason}; {sweep_reason}"}
 
-    if hook_bias != bias_4h:
-        return {
-            "valid":  False,
-            "reason": f"15m Ross Hook is {hook_bias} but 4H bias is {bias_4h}",
-        }
-
-    bias = hook_bias  # confirmed direction
-
-    # ── 1H Order Block + FVG ──────────────────────────────────────────────────
-    obs_1h     = find_order_blocks(df_1h, bias)
-    active_obs = [ob for ob in obs_1h if not ob.mitigated]
-
-    atr_1h     = calculate_atr(df_1h)
-    nearest_ob = _find_nearest_ob(active_obs, current_price, bias, atr_1h) if active_obs else None
-
-    fvgs_1h        = [f for f in find_fvg(df_1h) if not f.filled and f.kind == bias]
-    confluence_fvg = _find_fvg_near_ob(fvgs_1h, nearest_ob) if nearest_ob else None
-
-    # ── Gate 3: OB Confluence ─────────────────────────────────────────────────
-    # Live trade data: setups with a nearby 1H order block hit TP1 at ~2-3x
-    # the rate of setups without one (17.6% vs 5.0% across 94 resolved
-    # setups). No longer optional — a Hook without OB confluence is too
-    # often a false start.
-    if nearest_ob is None:
-        return {"valid": False, "reason": "No 1H order block confluence near current price"}
+    bias           = setup["bias"]
+    entry          = setup["entry"]
+    sl             = setup["sl"]
+    entry_type     = setup["entry_type"]
+    hook           = setup["ross_hook"]
+    nearest_ob     = setup["order_block"]
+    confluence_fvg = setup["fvg"]
 
     # ── Premium / Discount Zone (confluence info — bonus, not a hard gate) ────
     # PD theory assumes a mean-reversion retracement entry (short the premium
@@ -292,19 +429,7 @@ def get_full_analysis(pair: str) -> dict:
     else:
         pd_info = {"zone": "unknown", "equilibrium": 0.0, "fib_pct": 0.0}
 
-    # ── Entry Calculation ──────────────────────────────────────────────────────
-    # TTE (early correction-bar entry) disabled: live trade data showed a 7%
-    # win rate vs 37.5%+ for the hook-level entry — TTE fires before the
-    # correction has actually finished, catching too many false starts. Hook
-    # level entry, OB-derived structural SL (OB confluence is now a gate
-    # above, so nearest_ob is always set here).
-    tte = None
-    entry      = hook["hook_level"]
-    sl         = (
-        nearest_ob.low  * (1 - SL_BUFFER_PCT) if bias == "bullish"
-        else nearest_ob.high * (1 + SL_BUFFER_PCT)
-    )
-    entry_type = "HOOK"
+    tte = None  # TTE disabled — see module docstring
 
     # TP1/TP2 target real, untapped liquidity — a swing already closed
     # through doesn't have resting liquidity left at it, so it's not a
@@ -314,14 +439,14 @@ def get_full_analysis(pair: str) -> dict:
 
     levels = _build_levels(bias, entry, sl, unswept_highs, unswept_lows, len(df_4h) - 1)
 
-    # ── Gate 4: R:R Check ─────────────────────────────────────────────────────
+    # ── Shared Gate: R:R Check ────────────────────────────────────────────────
     if levels["rr_ratio"] < MIN_RR_RATIO:
         return {
             "valid":  False,
             "reason": f"R:R {levels['rr_ratio']:.1f} below minimum {MIN_RR_RATIO:.1f}",
         }
 
-    # ── Gate 5: Global Trend ──────────────────────────────────────────────────
+    # ── Shared Gate: Global Trend ─────────────────────────────────────────────
     # Checked last on purpose: it's the only gate that fetches extra data
     # (daily candles for this pair + BTC), so it only runs for setups that
     # already cleared everything cheaper.
@@ -353,5 +478,6 @@ def get_full_analysis(pair: str) -> dict:
         "tte":           tte,
         "pd_zone":       pd_info,
         "global_trend":  global_trend,
+        "sweep":         setup["sweep"],
         **levels,
     }

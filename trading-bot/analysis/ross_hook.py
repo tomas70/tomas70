@@ -47,6 +47,12 @@ TTE_TIE_TOLERANCE_PCT = 0.0005
 # used for OB proximity (OB_PROXIMITY_ATR_MULT in multi_timeframe.py).
 TTE_SL_BUFFER_ATR_MULT = 0.75
 
+# Minimum distance a breakout close must travel beyond P2, in 15m ATRs,
+# for the break to count as real rather than a stop hunt of the P2 level.
+# Fake breakouts are the known weak point of this pattern on thin perp
+# books — this is the filter for them.
+MIN_BREAKOUT_ATR_MULT = 0.25
+
 
 # ─── Data Classes ─────────────────────────────────────────────────────────────
 
@@ -96,7 +102,7 @@ def detect_ross_hook(df: pd.DataFrame) -> dict:
 
     Sequence:
       1. Valid 1-2-3 pattern
-      2. Breakout: close above P2 (bullish) or below P2 (bearish)
+      2. Breakout: close beyond P2 by at least MIN_BREAKOUT_ATR_MULT ATRs
       3. Post-breakout swing high (bullish) or swing low (bearish) = the Hook
       4. Hook is valid while P2 level has not been violated since
 
@@ -123,6 +129,12 @@ def detect_ross_hook(df: pd.DataFrame) -> dict:
     lows   = df["low"].values
     last_i = len(df) - 1
 
+    # Anti fake-breakout margin. A close a hair beyond P2 is indistinguishable
+    # from a liquidity sweep of the P2 stops — on a thin perp order book that
+    # happens constantly. Requiring real distance beyond the level is what
+    # separates "the level gave way" from "someone ran the stops".
+    breakout_margin = calculate_atr(df) * MIN_BREAKOUT_ATR_MULT
+
     hook_swing_highs = find_swing_highs(df, window=HOOK_SWING_WINDOW)
     hook_swing_lows  = find_swing_lows(df, window=HOOK_SWING_WINDOW)
 
@@ -130,8 +142,9 @@ def detect_ross_hook(df: pd.DataFrame) -> dict:
         p2_level = pat.p2.price
 
         if pat.kind == "bullish":
+            breakout_level = p2_level + breakout_margin
             breakout_i: Optional[int] = next(
-                (i for i in range(pat.p3.index + 1, last_i + 1) if closes[i] > p2_level),
+                (i for i in range(pat.p3.index + 1, last_i + 1) if closes[i] > breakout_level),
                 None,
             )
             if breakout_i is None:
@@ -164,8 +177,9 @@ def detect_ross_hook(df: pd.DataFrame) -> dict:
             }
 
         else:  # bearish
+            breakout_level = p2_level - breakout_margin
             breakout_i = next(
-                (i for i in range(pat.p3.index + 1, last_i + 1) if closes[i] < p2_level),
+                (i for i in range(pat.p3.index + 1, last_i + 1) if closes[i] < breakout_level),
                 None,
             )
             if breakout_i is None:

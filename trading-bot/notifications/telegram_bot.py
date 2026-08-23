@@ -44,6 +44,7 @@ def format_setup_message(
     fvg       = setup.get("fvg")
     hook      = setup.get("ross_hook") or {}
     gt        = setup.get("global_trend") or {}
+    sweep     = setup.get("sweep") or {}
     struct    = setup.get("structure_4h") or {}
     risk_usd  = setup.get("risk_usd", 0)
     pos_usd   = setup.get("position_usd", 0)
@@ -69,13 +70,29 @@ def format_setup_message(
         return obj.get(key, default) if isinstance(obj, dict) else getattr(obj, key, default)
 
     bias_arrow   = "⬆️" if bias == "LONG" else "⬇️"
-    bos_label    = "CHoCH ✓" if struct.get("is_choch") else "BOS ✓"
-    fvg_label    = "Neužpildytas ✓" if fvg else "nėra"
-    hook_ago     = hook.get("candles_ago", 0)
     ob_range     = f"${_v(ob,'low',0):,.2f}–${_v(ob,'high',0):,.2f}" if ob else "N/A"
-    entry_label  = "🎯 TTE" if entry_type == "TTE" else "📍 Hook"
+    entry_label  = "🧹 Sweep" if entry_type == "SWEEP" else "📍 Hook"
     daily_bias   = gt.get("daily_bias", "?")
     market_reg   = gt.get("market_regime", "?")
+
+    # The two setups are read differently, so show what actually triggered
+    if entry_type == "SWEEP":
+        level_pretty = sweep.get("level_name", "?").replace("_", " ")
+        setup_block = (
+            f"🧹 <b>LIQUIDITY SWEEP:</b>\n"
+            f"  Lygis:     {level_pretty} (${sweep.get('level', 0):,.4f})\n"
+            f"  Nušluota:  prieš {sweep.get('candles_ago', '?')} žvakių\n"
+            f"  Displacement ✓  |  FVG: {'✓' if sweep.get('has_fvg') else 'nėra (įėjimas prie lygio)'}\n"
+            f"  OB zona:   {ob_range}\n"
+        )
+    else:
+        setup_block = (
+            f"🧠 <b>JOE ROSS + SMC:</b>\n"
+            f"  Ross Hook: 15m ✓ (prieš {hook.get('candles_ago', 0)} žvakių)\n"
+            f"  4H {'CHoCH ✓' if struct.get('is_choch') else 'BOS ✓'}\n"
+            f"  OB zona:   {ob_range} ✓\n"
+            f"  FVG:       {'Neužpildytas ✓' if fvg else 'nėra'}\n"
+        )
 
     sl_sign  = "-" if bias == "LONG" else "+"
     tp1_sign = "+" if bias == "LONG" else "-"
@@ -107,11 +124,7 @@ def format_setup_message(
         f"  Notional:  ~${pos_usd:.0f}\n"
         f"  Leverage:  {leverage:.0f}x\n"
         f"\n"
-        f"🧠 <b>JOE ROSS + SMC:</b>\n"
-        f"  Ross Hook: 15m ✓ (prieš {hook_ago} žvakių)\n"
-        f"  4H {bos_label}\n"
-        f"  OB zona:   {ob_range} ✓\n"
-        f"  FVG:       {fvg_label}\n"
+        f"{setup_block}"
         f"\n"
         f"🌍 <b>GLOBALUS TRENDAS:</b>\n"
         f"  1D poros:  {daily_bias} ✓\n"

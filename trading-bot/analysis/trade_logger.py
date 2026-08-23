@@ -30,6 +30,7 @@ COLUMNS = [
     "ob_confluence", "fvg_confluence", "pd_zone",
     "tp1_structural", "tp1_age_4h", "hook_candles_ago",
     "daily_bias", "market_regime",
+    "sweep_level", "sweep_candles_ago", "sweep_has_fvg",
     "status", "outcome_at", "outcome_candles",
 ]
 
@@ -100,8 +101,9 @@ def log_setup(result: dict) -> None:
         logger.debug("trade_logger: skipping duplicate — %s %s already pending", pair, bias)
         return
 
-    hook = result.get("ross_hook") or {}
-    gt   = result.get("global_trend") or {}
+    hook  = result.get("ross_hook") or {}
+    gt    = result.get("global_trend") or {}
+    sweep = result.get("sweep") or {}
     row = {
         "id":               str(uuid.uuid4())[:8],
         "logged_at":        datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -119,8 +121,11 @@ def log_setup(result: dict) -> None:
         "tp1_structural":   result.get("tp1_structural", ""),
         "tp1_age_4h":       result.get("tp1_age_4h", ""),
         "hook_candles_ago": hook.get("candles_ago", ""),
-        "daily_bias":       gt.get("daily_bias", ""),
-        "market_regime":    gt.get("market_regime", ""),
+        "daily_bias":         gt.get("daily_bias", ""),
+        "market_regime":      gt.get("market_regime", ""),
+        "sweep_level":        sweep.get("level_name", ""),
+        "sweep_candles_ago":  sweep.get("candles_ago", ""),
+        "sweep_has_fvg":      sweep.get("has_fvg", ""),
         "status":           "pending",
         "outcome_at":       "",
         "outcome_candles":  "",
@@ -218,9 +223,10 @@ def get_stats() -> dict:
         return round(hits / len(subset) * 100, 1)
 
     by_type: dict[str, dict] = {}
-    for et in ("TTE", "HOOK"):
+    for et in ("HOOK", "SWEEP", "TTE"):
         sub = [r for r in resolved if r["entry_type"] == et]
-        by_type[et] = {"count": len(sub), "win_rate": win_rate(sub)}
+        if sub or et != "TTE":   # hide TTE once it has no history left
+            by_type[et] = {"count": len(sub), "win_rate": win_rate(sub)}
 
     ob_yes = [r for r in resolved if str(r.get("ob_confluence")) == "True"]
     ob_no  = [r for r in resolved if str(r.get("ob_confluence")) == "False"]
