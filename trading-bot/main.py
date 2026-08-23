@@ -201,17 +201,32 @@ def handle_command(command: str, args: list[str]) -> str:
         s = get_stats()
         if s["total"] == 0:
             return "📋 <b>Trade Log</b>\n\nDar nėra užrašytų setup'ų."
-        wr = f"{s['win_rate']:.1f}%" if s["win_rate"] is not None else "—"
+        def fmt(info: dict) -> str:
+            """'12 setup'ų → 25.0% TP1, +0.31R' — count, win rate, expectancy."""
+            if not info["count"]:
+                return "0 setup'ų"
+            wr_s  = f"{info['win_rate']:.1f}%" if info["win_rate"] is not None else "—"
+            exp_s = f"{info['expectancy']:+.2f}R" if info["expectancy"] is not None else "—"
+            return f"{info['count']} setup'ų → {wr_s} TP1, {exp_s}"
+
+        wr  = f"{s['win_rate']:.1f}%" if s["win_rate"] is not None else "—"
+        exp = f"{s['expectancy']:+.2f}R" if s["expectancy"] is not None else "—"
+
         lines = [
             "📋 <b>Trade Log</b>\n",
             f"Iš viso: {s['total']} setup'ų  |  Laukia: {s['pending']}",
             f"Išspręsta: {s['resolved']}  →  TP1: {s['tp1_hit']}  SL: {s['sl_hit']}  Expired: {s['expired']}",
-            f"<b>Win rate: {wr}</b>\n",
-            "<b>Pagal tipą:</b>",
+            f"<b>Win rate: {wr}  |  Expectancy: {exp}/sandoriui</b>",
+            "<i>(expectancy &gt; 0 = sistema pelninga, &lt; 0 = nuostolinga)</i>\n",
+            "<b>Pagal setup tipą:</b>",
         ]
         for et, info in s["by_type"].items():
-            wr_t = f"{info['win_rate']:.1f}%" if info["win_rate"] is not None else "—"
-            lines.append(f"  {et}: {info['count']} setup'ų → {wr_t} TP1")
+            lines.append(f"  {et}: {fmt(info)}")
+
+        lines.append("\n<b>Pagal R:R:</b>")
+        for band, info in s["by_rr"].items():
+            lines.append(f"  {band}: {fmt(info)}")
+
         if s["ob_yes_n"] or s["ob_no_n"]:
             lines.append("\n<b>OB confluence:</b>")
             ob_y = f"{s['ob_yes_wr']:.1f}%" if s["ob_yes_wr"] is not None else "—"

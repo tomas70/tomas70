@@ -14,6 +14,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
 
@@ -210,38 +211,90 @@ def update_all_pending_outcomes() -> int:
     return resolved
 
 
+def _expectancy(subset: list[dict]) -> Optional[float]:
+    """
+    Average R per trade — the number that actually decides whether a setup
+    is worth trading, which win rate alone can't tell you.
+
+    A TP1 hit pays the setup's own R:R; an SL hit costs exactly 1R (that's
+    what R means); an expired trade is counted as 0R, since it was closed
+    out flat-ish rather than resolved either way. Positive = the edge
+    survives; negative = the setup loses money however good the win rate
+    looks next to it.
+    """
+    if not subset:
+        return None
+
+    total = 0.0
+    for r in subset:
+        if r["status"] == "tp1_hit":
+            try:
+                total += float(r["rr_ratio"] or 0)
+            except ValueError:
+                pass
+        elif r["status"] == "sl_hit":
+            total -= 1.0
+    return round(total / len(subset), 2)
+
+
 def get_stats() -> dict:
-    """Returns win-rate summary broken down by entry type and OB confluence."""
+    """
+    Win rate AND expectancy, broken down by entry type, OB confluence, and
+    R:R band. The R:R bands exist to answer one question directly: whether
+    the low-R:R setups admitted by a lower MIN_RR_RATIO carry their weight
+    or drag the average down.
+    """
     rows     = _read_rows()
     resolved = [r for r in rows if r["status"] in ("tp1_hit", "sl_hit", "expired")]
     pending  = [r for r in rows if r["status"] == "pending"]
 
-    def win_rate(subset: list[dict]) -> float | None:
+    def win_rate(subset: list[dict]) -> Optional[float]:
         if not subset:
             return None
         hits = sum(1 for r in subset if r["status"] == "tp1_hit")
         return round(hits / len(subset) * 100, 1)
 
+    def summarize(subset: list[dict]) -> dict:
+        return {
+            "count":      len(subset),
+            "win_rate":   win_rate(subset),
+            "expectancy": _expectancy(subset),
+        }
+
     by_type: dict[str, dict] = {}
     for et in ("HOOK", "SWEEP", "TTE"):
         sub = [r for r in resolved if r["entry_type"] == et]
         if sub or et != "TTE":   # hide TTE once it has no history left
-            by_type[et] = {"count": len(sub), "win_rate": win_rate(sub)}
+            by_type[et] = summarize(sub)
+
+    def rr_of(row: dict) -> float:
+        try:
+            return float(row["rr_ratio"] or 0)
+        except ValueError:
+            return 0.0
+
+    by_rr = {
+        "1.5-2":  summarize([r for r in resolved if 1.5 <= rr_of(r) < 2.0]),
+        "2-3":    summarize([r for r in resolved if 2.0 <= rr_of(r) < 3.0]),
+        "3+":     summarize([r for r in resolved if rr_of(r) >= 3.0]),
+    }
 
     ob_yes = [r for r in resolved if str(r.get("ob_confluence")) == "True"]
     ob_no  = [r for r in resolved if str(r.get("ob_confluence")) == "False"]
 
     return {
-        "total":     len(rows),
-        "pending":   len(pending),
-        "resolved":  len(resolved),
-        "tp1_hit":   sum(1 for r in resolved if r["status"] == "tp1_hit"),
-        "sl_hit":    sum(1 for r in resolved if r["status"] == "sl_hit"),
-        "expired":   sum(1 for r in resolved if r["status"] == "expired"),
-        "win_rate":  win_rate(resolved),
-        "by_type":   by_type,
-        "ob_yes_wr": win_rate(ob_yes),
-        "ob_no_wr":  win_rate(ob_no),
-        "ob_yes_n":  len(ob_yes),
-        "ob_no_n":   len(ob_no),
+        "total":       len(rows),
+        "pending":     len(pending),
+        "resolved":    len(resolved),
+        "tp1_hit":     sum(1 for r in resolved if r["status"] == "tp1_hit"),
+        "sl_hit":      sum(1 for r in resolved if r["status"] == "sl_hit"),
+        "expired":     sum(1 for r in resolved if r["status"] == "expired"),
+        "win_rate":    win_rate(resolved),
+        "expectancy":  _expectancy(resolved),
+        "by_type":     by_type,
+        "by_rr":       by_rr,
+        "ob_yes_wr":   win_rate(ob_yes),
+        "ob_no_wr":    win_rate(ob_no),
+        "ob_yes_n":    len(ob_yes),
+        "ob_no_n":     len(ob_no),
     }
