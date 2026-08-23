@@ -43,7 +43,12 @@ SCAN_INTERVAL_MINUTES: int = 15
 
 # Risk management (hardcoded)
 RISK_PERCENTAGE: float = 0.30       # 30% of balance per trade
-MIN_RR_RATIO: float = 3.0           # Minimum Risk:Reward ratio
+# Minimum Risk:Reward ratio. Lowered 3.0 -> 1.5 deliberately: at 1.5R the
+# system needs a ~40% win rate to break even, well above the ~10% the trade
+# log currently shows. The tradeoff accepted here is that more setups pass,
+# so /log accumulates the HOOK-vs-SWEEP evidence faster — the threshold is
+# meant to be raised again once that data says which setup actually works.
+MIN_RR_RATIO: float = 1.5
 LEVERAGE: int = 5                   # Max leverage
 MAX_OPEN_POSITIONS: int = 1
 MIN_CONFIDENCE_SCORE: int = 7
