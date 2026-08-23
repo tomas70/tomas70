@@ -167,10 +167,21 @@ def send_telegram(
                 "text":       message,
                 "parse_mode": "HTML",
             })
-        if resp.is_success:
-            logger.info("Telegram message sent")
-            return True
-        logger.warning("Telegram error %s: %s", resp.status_code, resp.text[:200])
+            if resp.is_success:
+                logger.info("Telegram message sent")
+                return True
+
+            logger.warning("Telegram error %s: %s", resp.status_code, resp.text[:300])
+
+            # A setup alert is worth delivering with visible tags rather than
+            # not at all, so retry once without HTML parsing.
+            if resp.status_code == 400:
+                retry = client.post(url, json={"chat_id": chat_id, "text": message})
+                if retry.is_success:
+                    logger.info("Setup alert delivered as plain text (HTML rejected)")
+                    return True
+                logger.error("Plain-text retry also failed: %s", retry.text[:300])
+
         return False
 
     except Exception as exc:

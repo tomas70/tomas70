@@ -44,10 +44,34 @@ def _get_updates(token: str, offset: int) -> list[dict]:
 
 
 def _send(token: str, chat_id: str, text: str) -> None:
+    """
+    Sends a reply, falling back to plain text if Telegram rejects the HTML.
+
+    Telegram answers a malformed-HTML message with HTTP 400 rather than an
+    exception, so an unchecked post() looks like success while the user
+    sees nothing at all. Any non-2xx is logged, and a parse failure is
+    retried without parse_mode so the reply still arrives — a message with
+    visible tags beats a silently missing one.
+    """
     url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
+
     try:
         with httpx.Client(timeout=10) as client:
-            client.post(url, json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"})
+            resp = client.post(url, json=payload)
+            if resp.is_success:
+                return
+
+            body = resp.text[:300]
+            logger.warning("Telegram rejected reply (HTTP %s): %s", resp.status_code, body)
+
+            if resp.status_code == 400:
+                retry = client.post(url, json={"chat_id": chat_id, "text": text})
+                if retry.is_success:
+                    logger.info("Reply delivered as plain text after HTML was rejected")
+                else:
+                    logger.error("Plain-text retry also failed: %s", retry.text[:300])
+
     except Exception as exc:
         logger.warning("Reply send failed: %s", exc)
 
