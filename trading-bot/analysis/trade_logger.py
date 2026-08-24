@@ -136,17 +136,52 @@ def log_setup(result: dict) -> None:
     logger.info("Setup logged: %s %s RR=%.2f", row["pair"], row["bias"], float(row["rr_ratio"] or 0))
 
 
+def simulate_walk(
+    df: pd.DataFrame,
+    logged_at: datetime,
+    bias: str,
+    tp: float,
+    sl: float,
+    max_candles: int = MAX_OUTCOME_CANDLES,
+) -> tuple[Optional[str], Optional[str], Optional[int]]:
+    """
+    Walks every 15m candle closed after `logged_at` and reports which of
+    `tp` / `sl` it hit first — the core simulation shared by production
+    outcome resolution (update_all_pending_outcomes) and offline replay
+    (optimize_tp.py testing alternate TP distances against the same
+    logged entry/SL).
+
+    Stop and limit orders are triggered by price, not by close, so wicks
+    are the correct comparison. When both levels appear on the same candle
+    (gap/spike), TP is credited — standard backtesting convention when
+    intra-candle order is unknown.
+
+    Returns (status, outcome_at, candles). status is None when `df`
+    doesn't yet contain enough history past `logged_at` to resolve either
+    way — the caller should treat that as "not resolvable from this data"
+    rather than as an expiry.
+    """
+    after = df[df["timestamp"] > pd.Timestamp(logged_at)].reset_index(drop=True)
+    if after.empty:
+        return None, None, None
+
+    for idx, candle in after.iterrows():
+        tp_hit = candle["high"] >= tp if bias == "bullish" else candle["low"] <= tp
+        sl_hit = candle["low"]  <= sl if bias == "bullish" else candle["high"] >= sl
+
+        if tp_hit or sl_hit:
+            status = "tp1_hit" if tp_hit else "sl_hit"
+            return status, str(candle["timestamp"]), int(idx) + 1
+
+    if len(after) >= max_candles:
+        return "expired", str(after.iloc[-1]["timestamp"]), len(after)
+
+    return None, None, None  # not enough forward data yet
+
+
 def update_all_pending_outcomes() -> int:
     """
     Resolves pending log entries against the latest 15m candle data.
-
-    For each pending setup, walks every 15m candle that closed after the
-    alert timestamp and checks whether the HIGH (bullish) or LOW (bearish)
-    reached TP1, or the LOW (bullish) / HIGH (bearish) reached SL.
-    Stop and limit orders are triggered by price, not by close, so wicks
-    are the correct comparison.  When both levels appear on the same candle
-    (gap/spike), TP1 is credited — standard backtesting convention when
-    intra-candle order is unknown.
 
     Returns the number of rows resolved in this call.
     """
@@ -171,44 +206,53 @@ def update_all_pending_outcomes() -> int:
         if df is None or df.empty:
             continue
 
-        logged_at = datetime.fromisoformat(row["logged_at"])
-        tp1  = float(row["tp1"])
-        sl   = float(row["sl"])
-        bias = row["bias"]
+        status, outcome_at, outcome_candles = simulate_walk(
+            df,
+            datetime.fromisoformat(row["logged_at"]),
+            row["bias"],
+            float(row["tp1"]),
+            float(row["sl"]),
+        )
 
-        after = df[df["timestamp"] > pd.Timestamp(logged_at)].reset_index(drop=True)
-        if after.empty:
-            continue
-
-        outcome = outcome_at = outcome_candles = None
-
-        for idx, candle in after.iterrows():
-            tp_hit = candle["high"] >= tp1 if bias == "bullish" else candle["low"] <= tp1
-            sl_hit = candle["low"]  <= sl  if bias == "bullish" else candle["high"] >= sl
-
-            if tp_hit or sl_hit:
-                outcome          = "tp1_hit" if tp_hit else "sl_hit"
-                outcome_at       = str(candle["timestamp"])
-                outcome_candles  = int(idx) + 1
-                break
-
-        if outcome is None and len(after) >= MAX_OUTCOME_CANDLES:
-            outcome         = "expired"
-            outcome_at      = str(after.iloc[-1]["timestamp"])
-            outcome_candles = len(after)
-
-        if outcome:
-            row["status"]          = outcome
+        if status:
+            row["status"]          = status
             row["outcome_at"]      = outcome_at
             row["outcome_candles"] = outcome_candles
             resolved += 1
             logger.info(
-                "Outcome: %s %s → %s (%s bars)", row["pair"], row["bias"], outcome, outcome_candles
+                "Outcome: %s %s → %s (%s bars)", row["pair"], row["bias"], status, outcome_candles
             )
 
     if resolved:
         _write_rows(rows)
     return resolved
+
+
+def _rr_of(row: dict) -> float:
+    try:
+        return float(row["rr_ratio"] or 0)
+    except ValueError:
+        return 0.0
+
+
+def _baseline_win_rate(subset: list[dict]) -> Optional[float]:
+    """
+    What win rate a coin-flip entry (no edge, pure random walk between the
+    two levels) would produce at each trade's own R:R — the number actual
+    win rate needs to beat before a setup can be called a real edge rather
+    than noise. Approximates each trade as symmetric diffusion between its
+    entry and SL/TP1 boundaries: P(hit TP1 first) ≈ 1/(1+R). This ignores
+    drift and volatility clustering, so treat it as a sanity-check floor,
+    not an exact model.
+
+    Uses the same subset/denominator as win_rate() (expired trades
+    included), so the two stay directly comparable as an edge in
+    percentage points.
+    """
+    if not subset:
+        return None
+    probs = [1 / (1 + _rr_of(r)) for r in subset]
+    return round(sum(probs) / len(probs) * 100, 1)
 
 
 def _expectancy(subset: list[dict]) -> Optional[float]:
@@ -255,10 +299,15 @@ def get_stats() -> dict:
         return round(hits / len(subset) * 100, 1)
 
     def summarize(subset: list[dict]) -> dict:
+        wr       = win_rate(subset)
+        baseline = _baseline_win_rate(subset)
+        edge     = round(wr - baseline, 1) if wr is not None and baseline is not None else None
         return {
-            "count":      len(subset),
-            "win_rate":   win_rate(subset),
-            "expectancy": _expectancy(subset),
+            "count":       len(subset),
+            "win_rate":    wr,
+            "baseline_wr": baseline,
+            "edge_pp":     edge,
+            "expectancy":  _expectancy(subset),
         }
 
     by_type: dict[str, dict] = {}
@@ -267,34 +316,32 @@ def get_stats() -> dict:
         if sub or et != "TTE":   # hide TTE once it has no history left
             by_type[et] = summarize(sub)
 
-    def rr_of(row: dict) -> float:
-        try:
-            return float(row["rr_ratio"] or 0)
-        except ValueError:
-            return 0.0
-
     by_rr = {
-        "1.5-2":  summarize([r for r in resolved if 1.5 <= rr_of(r) < 2.0]),
-        "2-3":    summarize([r for r in resolved if 2.0 <= rr_of(r) < 3.0]),
-        "3+":     summarize([r for r in resolved if rr_of(r) >= 3.0]),
+        "1.5-2":  summarize([r for r in resolved if 1.5 <= _rr_of(r) < 2.0]),
+        "2-3":    summarize([r for r in resolved if 2.0 <= _rr_of(r) < 3.0]),
+        "3+":     summarize([r for r in resolved if _rr_of(r) >= 3.0]),
     }
 
     ob_yes = [r for r in resolved if str(r.get("ob_confluence")) == "True"]
     ob_no  = [r for r in resolved if str(r.get("ob_confluence")) == "False"]
 
+    overall = summarize(resolved)
+
     return {
-        "total":       len(rows),
-        "pending":     len(pending),
-        "resolved":    len(resolved),
-        "tp1_hit":     sum(1 for r in resolved if r["status"] == "tp1_hit"),
-        "sl_hit":      sum(1 for r in resolved if r["status"] == "sl_hit"),
-        "expired":     sum(1 for r in resolved if r["status"] == "expired"),
-        "win_rate":    win_rate(resolved),
-        "expectancy":  _expectancy(resolved),
-        "by_type":     by_type,
-        "by_rr":       by_rr,
-        "ob_yes_wr":   win_rate(ob_yes),
-        "ob_no_wr":    win_rate(ob_no),
-        "ob_yes_n":    len(ob_yes),
-        "ob_no_n":     len(ob_no),
+        "total":         len(rows),
+        "pending":       len(pending),
+        "resolved":      len(resolved),
+        "tp1_hit":       sum(1 for r in resolved if r["status"] == "tp1_hit"),
+        "sl_hit":        sum(1 for r in resolved if r["status"] == "sl_hit"),
+        "expired":       sum(1 for r in resolved if r["status"] == "expired"),
+        "win_rate":      overall["win_rate"],
+        "baseline_wr":   overall["baseline_wr"],
+        "edge_pp":       overall["edge_pp"],
+        "expectancy":    overall["expectancy"],
+        "by_type":       by_type,
+        "by_rr":         by_rr,
+        "ob_yes_wr":     win_rate(ob_yes),
+        "ob_no_wr":      win_rate(ob_no),
+        "ob_yes_n":      len(ob_yes),
+        "ob_no_n":       len(ob_no),
     }

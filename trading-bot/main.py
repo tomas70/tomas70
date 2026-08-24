@@ -202,22 +202,28 @@ def handle_command(command: str, args: list[str]) -> str:
         if s["total"] == 0:
             return "📋 <b>Trade Log</b>\n\nDar nėra užrašytų setup'ų."
         def fmt(info: dict) -> str:
-            """'12 setup'ų → 25.0% TP1, +0.31R' — count, win rate, expectancy."""
+            """'12 → 25.0% (baz. 30.0%, edge -5.0pp), +0.31R' — vs. random-walk baseline."""
             if not info["count"]:
                 return "0 setup'ų"
-            wr_s  = f"{info['win_rate']:.1f}%" if info["win_rate"] is not None else "—"
-            exp_s = f"{info['expectancy']:+.2f}R" if info["expectancy"] is not None else "—"
-            return f"{info['count']} setup'ų → {wr_s} TP1, {exp_s}"
+            wr_s   = f"{info['win_rate']:.1f}%" if info["win_rate"] is not None else "—"
+            bl_s   = f"{info['baseline_wr']:.1f}%" if info["baseline_wr"] is not None else "—"
+            edge_s = f"{info['edge_pp']:+.1f}pp" if info["edge_pp"] is not None else "—"
+            exp_s  = f"{info['expectancy']:+.2f}R" if info["expectancy"] is not None else "—"
+            return f"{info['count']} → {wr_s} (baz. {bl_s}, edge {edge_s}), {exp_s}"
 
-        wr  = f"{s['win_rate']:.1f}%" if s["win_rate"] is not None else "—"
-        exp = f"{s['expectancy']:+.2f}R" if s["expectancy"] is not None else "—"
+        wr    = f"{s['win_rate']:.1f}%" if s["win_rate"] is not None else "—"
+        bl    = f"{s['baseline_wr']:.1f}%" if s["baseline_wr"] is not None else "—"
+        edge  = f"{s['edge_pp']:+.1f}pp" if s["edge_pp"] is not None else "—"
+        exp   = f"{s['expectancy']:+.2f}R" if s["expectancy"] is not None else "—"
 
         lines = [
             "📋 <b>Trade Log</b>\n",
             f"Iš viso: {s['total']} setup'ų  |  Laukia: {s['pending']}",
             f"Išspręsta: {s['resolved']}  →  TP1: {s['tp1_hit']}  SL: {s['sl_hit']}  Expired: {s['expired']}",
-            f"<b>Win rate: {wr}  |  Expectancy: {exp}/sandoriui</b>",
-            "<i>(expectancy &gt; 0 = sistema pelninga, &lt; 0 = nuostolinga)</i>\n",
+            f"<b>Win rate: {wr}</b>  (atsitiktinumo riba: {bl}, edge: {edge})",
+            f"<b>Expectancy: {exp}/sandoriui</b>",
+            "<i>Atsitiktinumo riba = ką duotų grynas monetos metimas prie to paties R:R.\n"
+            "Edge &gt; 0 = sistema geresnė už atsitiktinumą. Expectancy &gt; 0 = pelninga po visų sandorių.</i>\n",
             "<b>Pagal setup tipą:</b>",
         ]
         for et, info in s["by_type"].items():
