@@ -10,6 +10,11 @@ TELEGRAM_CHAT_ID:   str = os.getenv("TELEGRAM_CHAT_ID",   "")
 # Anthropic API key: only needed for standalone mode (without Claude Desktop)
 ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
 
+# Public Hyperliquid wallet address (0x...) — NOT a private key. Used to read
+# live account balance and executed trade history via the public info API.
+# Required for balance/status to work; the bot never signs or trades.
+HYPERLIQUID_ADDRESS: str = os.getenv("HYPERLIQUID_ADDRESS", "")
+
 # Trading pairs — Hyperliquid perpetual futures (coin symbol only)
 # Selected for: high Hyperliquid volume + TradFi presence (CME/ETF/institutional)
 PAIRS: list[str] = [

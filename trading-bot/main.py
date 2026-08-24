@@ -4,17 +4,18 @@ Standalone scheduler + Telegram command bot.
 Runs automatically every 15 min AND listens for iPhone commands via Telegram.
 
 Commands (send to your bot from iPhone):
-  /scan              → immediate market scan
-  /status            → current level, balance, trade stats
-  /balance <amount>  → update account balance
-  /help              → command list
+  /scan    → immediate market scan
+  /status  → current level, live balance, trade stats (from Hyperliquid)
+  /help    → command list
+
+Balance and trade history are read live from Hyperliquid via
+HYPERLIQUID_ADDRESS (see .env.example) — nothing is tracked manually.
 
 Usage:
     python main.py
     # or for auto-start on Mac:
     bash run_main.sh
 """
-import json
 import logging
 import os
 import sys
@@ -28,6 +29,9 @@ import time
 
 from analysis.multi_timeframe import get_full_analysis
 from analysis.trade_logger import get_stats, log_setup, update_all_pending_outcomes
+from analysis.hyperliquid_account import (
+    AccountNotConfigured, get_account_balance, get_recent_fills, summarize_trades,
+)
 from ai.claude_analyst import generate_setup_standalone
 from notifications.telegram_bot import format_setup_message, send_telegram
 from notifications.bot_commands import listen_for_commands
@@ -41,7 +45,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-TRADES_FILE = Path(__file__).parent / "logs" / "trades.json"
 LOGS_DIR    = Path(__file__).parent / "logs"
 _LOCK_FILE  = LOGS_DIR / "main.lock"
 _lock_fd    = None  # keep open to hold the lock
@@ -68,33 +71,6 @@ def _acquire_lock() -> None:
         sys.exit(1)
 
 
-# ─── Balance persistence ──────────────────────────────────────────────────────
-
-def _load_balance() -> float:
-    if TRADES_FILE.exists():
-        try:
-            with open(TRADES_FILE) as f:
-                return float(json.load(f).get("current_balance", 20.0))
-        except Exception:
-            pass
-    return 20.0
-
-
-def _save_balance(balance: float) -> None:
-    LOGS_DIR.mkdir(exist_ok=True)
-    data: dict = {}
-    if TRADES_FILE.exists():
-        try:
-            with open(TRADES_FILE) as f:
-                data = json.load(f)
-        except Exception:
-            pass
-    data["current_balance"] = balance
-    data["current_level"]   = get_current_level(balance)["level"]
-    with open(TRADES_FILE, "w") as f:
-        json.dump(data, f, indent=2)
-
-
 # ─── Market scanner ───────────────────────────────────────────────────────────
 
 def scan_markets(silent: bool = False) -> str:
@@ -102,7 +78,15 @@ def scan_markets(silent: bool = False) -> str:
     Scans all pairs. Sends best setup to Telegram if found.
     Returns a short status string (used by /scan command reply).
     """
-    balance    = _load_balance()
+    try:
+        balance = get_account_balance()
+    except AccountNotConfigured as exc:
+        logger.error(str(exc))
+        return f"⚠️ {exc}"
+    except Exception as exc:
+        logger.error("Nepavyko gauti balanso iš Hyperliquid: %s", exc)
+        return f"⚠️ Nepavyko gauti balanso iš Hyperliquid: {exc}"
+
     level_info = get_current_level(balance)
     now        = datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -188,10 +172,11 @@ def handle_command(command: str, args: list[str]) -> str:
         return (
             "🤖 <b>Trading Bot komandos:</b>\n\n"
             "/scan — skenuoti rinkas dabar\n"
-            "/status — balansas ir lygis\n"
-            "/balance &lt;suma&gt; — nustatyti balansą\n"
-            "  pvz: <code>/balance 26</code>\n"
-            "/help — ši pagalba"
+            "/status — balansas, lygis ir sandorių statistika (iš Hyperliquid)\n"
+            "/log — bot'o alertų statistika (skirtinga nuo /status — žr. žemiau)\n"
+            "/help — ši pagalba\n\n"
+            "<i>Balansas ir sandoriai imami tiesiogiai iš Hyperliquid — nieko "
+            "įvesti rankiniu būdu nereikia.</i>"
         )
 
     if command == "/scan":
@@ -242,46 +227,36 @@ def handle_command(command: str, args: list[str]) -> str:
         return "\n".join(lines)
 
     if command == "/status":
-        balance    = _load_balance()
-        level_info = get_current_level(balance)
-        trades: list = []
-        if TRADES_FILE.exists():
-            try:
-                with open(TRADES_FILE) as f:
-                    trades = json.load(f).get("trades", [])
-            except Exception:
-                pass
+        try:
+            balance = get_account_balance()
+        except AccountNotConfigured as exc:
+            return f"⚠️ {exc}"
+        except Exception as exc:
+            return f"⚠️ Nepavyko gauti balanso iš Hyperliquid: {exc}"
 
-        wins   = sum(1 for t in trades if t.get("result") == "win")
-        losses = sum(1 for t in trades if t.get("result") == "loss")
-        total  = len(trades)
+        level_info = get_current_level(balance)
+
+        try:
+            fills   = get_recent_fills(lookback_days=30)
+            summary = summarize_trades(fills)
+            trade_line = (
+                f"Sandoriai (30d): {summary['closing_fills']} iš viso | "
+                f"{summary['wins']}W / {summary['losses']}L"
+                + (f" ({summary['win_rate']:.1f}%)" if summary["win_rate"] is not None else "")
+                + f"\nPnL: ${summary['net_pnl']:+.2f} (po ${summary['total_fees']:.2f} fee)"
+            )
+        except Exception as exc:
+            logger.warning("Nepavyko gauti sandorių istorijos: %s", exc)
+            trade_line = "Sandorių istorija laikinai nepasiekiama."
 
         return (
-            f"📊 <b>Account Status</b>\n\n"
+            f"📊 <b>Account Status</b>  <i>(gyvai iš Hyperliquid)</i>\n\n"
             f"Level:     {level_info['level']} / 30\n"
             f"Balansas:  <b>${balance:.2f}</b>\n"
             f"Tikslas:   ${level_info['next_level_balance']:.2f} "
             f"(dar ${level_info['remaining_profit']:.2f})\n"
             f"Progress:  {level_info['progress_pct']:.0f}%\n\n"
-            f"Trades: {total} iš viso | {wins}W / {losses}L"
-        )
-
-    if command == "/balance":
-        if not args:
-            return "⚠️ Nurodyk sumą. Pvz: <code>/balance 26</code>"
-        try:
-            new_balance = float(args[0])
-            if new_balance <= 0:
-                raise ValueError
-        except ValueError:
-            return "⚠️ Netinkama suma. Pvz: <code>/balance 26.50</code>"
-
-        _save_balance(new_balance)
-        level_info = get_current_level(new_balance)
-        return (
-            f"✅ Balansas atnaujintas: <b>${new_balance:.2f}</b>\n"
-            f"Level: {level_info['level']} | "
-            f"Tikslas: ${level_info['next_level_balance']:.2f}"
+            f"{trade_line}"
         )
 
     return f"❓ Nežinoma komanda: {command}\nRašyk /help norėdamas pamatyti sąrašą."
