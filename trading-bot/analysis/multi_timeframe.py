@@ -155,19 +155,28 @@ def _tp_targets(
     flagged via tp1_structural=False so callers can warn that the level
     isn't backed by real 4H structure (and a high R:R off it is more
     speculative).
+
+    TP2 is always pushed at least 2% beyond TP1, whichever path produced
+    each. Without this, a lone real swing standing farther out than the
+    flat-% TP2 fallback (e.g. TP1 at +6.4% with only one swing found, TP2
+    fallback flat at +6%) would leave TP2 closer than TP1 — a target that
+    isn't "further", contradicting what TP2 is supposed to mean.
     """
     if bias == "bullish":
         above  = sorted((sp for sp in swing_highs if sp.price > entry), key=lambda sp: sp.price)
         tp1_sp = above[0] if above else None
-        tp2    = above[1].price if len(above) > 1 else round(entry * 1.06, 8)
-        fallback_tp1 = round(entry * 1.03, 8)
+        tp1    = tp1_sp.price if tp1_sp else round(entry * 1.03, 8)
+
+        further = above[1].price if len(above) > 1 else round(entry * 1.06, 8)
+        tp2     = round(max(further, tp1 * 1.02), 8)
     else:
         below  = sorted((sp for sp in swing_lows if sp.price < entry), key=lambda sp: sp.price, reverse=True)
         tp1_sp = below[0] if below else None
-        tp2    = below[1].price if len(below) > 1 else round(entry * 0.94, 8)
-        fallback_tp1 = round(entry * 0.97, 8)
+        tp1    = tp1_sp.price if tp1_sp else round(entry * 0.97, 8)
 
-    tp1     = tp1_sp.price if tp1_sp else fallback_tp1
+        further = below[1].price if len(below) > 1 else round(entry * 0.94, 8)
+        tp2     = round(min(further, tp1 * 0.98), 8)
+
     tp1_age = (last_index_4h - tp1_sp.index) if tp1_sp else None
 
     return {"tp1": tp1, "tp2": tp2, "tp1_age": tp1_age, "tp1_structural": tp1_sp is not None}

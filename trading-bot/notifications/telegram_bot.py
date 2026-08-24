@@ -69,7 +69,7 @@ def format_setup_message(
             return default
         return obj.get(key, default) if isinstance(obj, dict) else getattr(obj, key, default)
 
-    bias_arrow   = "⬆️" if bias == "LONG" else "⬇️"
+    bias_arrow   = "⬆️" if bias == "BULLISH" else "⬇️"
     ob_range     = f"${_v(ob,'low',0):,.2f}–${_v(ob,'high',0):,.2f}" if ob else "N/A"
     entry_label  = "🧹 Sweep" if entry_type == "SWEEP" else "📍 Hook"
     daily_bias   = gt.get("daily_bias", "?")
@@ -94,8 +94,8 @@ def format_setup_message(
             f"  FVG:       {'Neužpildytas ✓' if fvg else 'nėra'}\n"
         )
 
-    sl_sign  = "-" if bias == "LONG" else "+"
-    tp1_sign = "+" if bias == "LONG" else "-"
+    sl_sign  = "-" if bias == "BULLISH" else "+"
+    tp1_sign = "+" if bias == "BULLISH" else "-"
 
     if not tp1_structural:
         tp1_quality = "⚠️ ne struktūrinis (fallback %, RR spekuliatyvus)"
@@ -130,7 +130,7 @@ def format_setup_message(
         f"  1D poros:  {daily_bias} ✓\n"
         f"  BTC:       {market_reg} ✓\n"
         f"\n"
-        f"⚠️ <b>INVALIDATION:</b> {'žemiau' if bias == 'LONG' else 'virš'} "
+        f"⚠️ <b>INVALIDATION:</b> {'žemiau' if bias == 'BULLISH' else 'virš'} "
         f"<code>${sl:,.4f}</code> (SL lygis)\n"
         f"\n"
         f"💬 <i>{reasoning}</i>\n"
