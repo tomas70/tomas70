@@ -15,6 +15,25 @@ set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 BASE="https://raw.githubusercontent.com/tomas70/tomas70/claude/remote-control-5n0vxb/trading-bot"
 VENV_PY="$DIR/.venv/bin/python"
+SELF="$DIR/update.sh"
+
+# Self-update first. Without this, a stale local copy of update.sh keeps
+# running its OWN old file list and old logic forever — nothing else ever
+# re-downloads update.sh itself, so a fix pushed to this script silently
+# never reaches a Mac that's still running yesterday's copy of it.
+if [ -z "${UPDATE_SH_REEXEC:-}" ]; then
+    TMP_SELF="$(mktemp)"
+    if curl -fsSL "$BASE/update.sh?$(date +%s)" -o "$TMP_SELF" && [ -s "$TMP_SELF" ]; then
+        if ! cmp -s "$TMP_SELF" "$SELF"; then
+            echo "🔁 update.sh pats turi naujesnę versiją — persileidžiu..."
+            cp "$TMP_SELF" "$SELF"
+            chmod +x "$SELF"
+            rm -f "$TMP_SELF"
+            exec env UPDATE_SH_REEXEC=1 bash "$SELF" "$@"
+        fi
+    fi
+    rm -f "$TMP_SELF"
+fi
 
 echo "⬇️  Atnaujinami failai į $DIR ..."
 
