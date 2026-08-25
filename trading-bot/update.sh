@@ -1,43 +1,103 @@
 #!/usr/bin/env bash
-# update.sh — parsisiunčia naujausius failus iš GitHub
+# update.sh — parsisiunčia VISUS naujausius failus iš GitHub, patikrina, kad
+# jie importuojasi, ir tik tada perkrauna botą.
+#
 # Paleidimas: bash /Users/tomassipelis/trading-bot/update.sh
+#
+# Visada naudok ŠĮ skriptą atnaujinimui, ne pavienius curl komandas — botas
+# yra vienas Python paketas, ir dalinis atnaujinimas (kai kurie failai nauji,
+# kiti seni) sukelia importo klaidas arba KeyError, kurie kartais tylūs
+# (žr. main.py:/log — jei tik main.py atnaujintas, o analysis/trade_logger.py
+# ne, /log komanda luš su "KeyError: 'baseline_wr'").
 
 set -e
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 BASE="https://raw.githubusercontent.com/tomas70/tomas70/claude/remote-control-5n0vxb/trading-bot"
+VENV_PY="$DIR/.venv/bin/python"
 
 echo "⬇️  Atnaujinami failai į $DIR ..."
 
 mkdir -p "$DIR/analysis" "$DIR/ai" "$DIR/notifications" "$DIR/risk" "$DIR/logs"
 
-curl -fsSL "$BASE/main.py"                     -o "$DIR/main.py"
-curl -fsSL "$BASE/mcp_server.py"               -o "$DIR/mcp_server.py"
-curl -fsSL "$BASE/config.py"                   -o "$DIR/config.py"
-curl -fsSL "$BASE/requirements.txt"            -o "$DIR/requirements.txt"
-curl -fsSL "$BASE/run_mcp.sh"                  -o "$DIR/run_mcp.sh"
-curl -fsSL "$BASE/run_main.sh"                 -o "$DIR/run_main.sh"
-curl -fsSL "$BASE/diagnose_rr.py"              -o "$DIR/diagnose_rr.py"
+FILES=(
+    main.py
+    mcp_server.py
+    config.py
+    requirements.txt
+    run_mcp.sh
+    run_main.sh
+    diagnose_rr.py
+    optimize_tp.py
+    setup_autostart.sh
+    analysis/__init__.py
+    analysis/market_data.py
+    analysis/smc.py
+    analysis/ross_hook.py
+    analysis/multi_timeframe.py
+    analysis/global_trend.py
+    analysis/liquidity.py
+    analysis/trade_logger.py
+    analysis/hyperliquid_account.py
+    ai/__init__.py
+    ai/claude_analyst.py
+    notifications/__init__.py
+    notifications/telegram_bot.py
+    notifications/bot_commands.py
+    risk/__init__.py
+    risk/position_sizer.py
+)
 
-curl -fsSL "$BASE/analysis/__init__.py"        -o "$DIR/analysis/__init__.py"
-curl -fsSL "$BASE/analysis/market_data.py"     -o "$DIR/analysis/market_data.py"
-curl -fsSL "$BASE/analysis/smc.py"             -o "$DIR/analysis/smc.py"
-curl -fsSL "$BASE/analysis/ross_hook.py"       -o "$DIR/analysis/ross_hook.py"
-curl -fsSL "$BASE/analysis/multi_timeframe.py" -o "$DIR/analysis/multi_timeframe.py"
+FAILED=0
+for f in "${FILES[@]}"; do
+    # Parsisiunčiama į .tmp ir perkeliama tik jei pavyko — nepavykus
+    # parsisiųsti, senas (veikiantis) failas lieka nepaliestas vietoje
+    # sugadinto/tuščio.
+    if curl -fsSL "$BASE/$f?$(date +%s)" -o "$DIR/$f.tmp"; then
+        mv "$DIR/$f.tmp" "$DIR/$f"
+        echo "  ok    $f"
+    else
+        rm -f "$DIR/$f.tmp"
+        echo "  FAIL  $f"
+        FAILED=1
+    fi
+done
 
-curl -fsSL "$BASE/ai/__init__.py"              -o "$DIR/ai/__init__.py"
-curl -fsSL "$BASE/ai/claude_analyst.py"        -o "$DIR/ai/claude_analyst.py"
+chmod +x "$DIR/run_mcp.sh" "$DIR/run_main.sh" "$DIR/setup_autostart.sh" 2>/dev/null || true
 
-curl -fsSL "$BASE/notifications/__init__.py"   -o "$DIR/notifications/__init__.py"
-curl -fsSL "$BASE/notifications/telegram_bot.py"  -o "$DIR/notifications/telegram_bot.py"
-curl -fsSL "$BASE/notifications/bot_commands.py"  -o "$DIR/notifications/bot_commands.py"
+echo "─────────────────────────────"
 
-curl -fsSL "$BASE/risk/__init__.py"            -o "$DIR/risk/__init__.py"
-curl -fsSL "$BASE/risk/position_sizer.py"      -o "$DIR/risk/position_sizer.py"
+if [ "$FAILED" -eq 1 ]; then
+    echo "❌ Kai kurie failai nenusiuntė — BOTAS NEPERKRAUNAMAS. Patikrink interneto ryšį ir bandyk dar kartą."
+    exit 1
+fi
 
-curl -fsSL "$BASE/setup_autostart.sh"           -o "$DIR/setup_autostart.sh"
+echo "🔎 Tikrinami importai..."
+if [ ! -x "$VENV_PY" ]; then
+    echo "⚠️  .venv nerastas — praleidžiu importo patikrą (bus sukurtas paleidžiant run_main.sh)."
+else
+    if "$VENV_PY" -c "
+import analysis.market_data, analysis.smc, analysis.ross_hook
+import analysis.multi_timeframe, analysis.global_trend, analysis.liquidity
+import analysis.trade_logger, analysis.hyperliquid_account
+import ai.claude_analyst, notifications.telegram_bot, notifications.bot_commands
+import risk.position_sizer
+print('✅ visi moduliai importuojasi')
+"; then
+        :
+    else
+        echo "❌ IMPORTO KLAIDA — BOTAS NEPERKRAUNAMAS, kad neliktų sustabdytas. Parodyk šią klaidą, kad pataisytume."
+        exit 1
+    fi
+fi
 
-chmod +x "$DIR/run_mcp.sh" "$DIR/run_main.sh" "$DIR/setup_autostart.sh"
+echo "🔄 Perkraunamas botas..."
+pkill -9 -f main.py 2>/dev/null || true
+sleep 35
 
-echo "✅ Visi failai atnaujinti!"
-echo "   .env failas NEPALIESTAS — tavo API raktai saugūs."
+if pgrep -fl main.py > /dev/null; then
+    echo "✅ BOTAS VEIKIA"
+else
+    echo "❌ Botas nepasileido po perkrovimo — patikrink logs/ arba paleisk rankiniu būdu:"
+    echo "   cd $DIR && .venv/bin/python main.py"
+fi
