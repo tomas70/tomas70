@@ -36,7 +36,11 @@ PAIRS: list[str] = [
     "DOGE", "AVAX", "LINK", "ADA", "DOT",
     "LTC", "BCH", "ATOM", "NEAR", "SUI",
     # Tier 3 — major DeFi + L2 + ecosystem
-    "APT", "ARB", "OP", "TON", "UNI",
+    # TON renamed to GRAM (ticker + symbol) on 2026-06-15 after an 81.22%
+    # community vote; Hyperliquid delisted the old TON perp around the same
+    # time and lists the renamed asset as GRAM — same network/holdings, new
+    # symbol only, no token swap.
+    "APT", "ARB", "OP", "GRAM", "UNI",
 ]
 
 # Timeframes fetched for every pair on every scan
