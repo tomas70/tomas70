@@ -15,6 +15,18 @@ ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
 # Required for balance/status to work; the bot never signs or trades.
 HYPERLIQUID_ADDRESS: str = os.getenv("HYPERLIQUID_ADDRESS", "")
 
+# Cutoff for /log statistics: rows logged before this are excluded from the
+# DEFAULT (epoch-filtered) view. Bump this to "now" whenever a change to
+# setup detection/gating logic ships — trade_log.csv accumulates forever, so
+# without a cutoff, stats permanently blend results from every past rule-set
+# with the current one, and a real improvement (or regression) gets diluted
+# into invisibility. Full unfiltered history is still available via /log all.
+#
+# Last bumped: liquidity sweep setup + anti-fake-breakout margin on Ross
+# Hook + MIN_RR_RATIO 3.0->1.5 all shipped together — this marks "after all
+# of that, before which none of the current entry logic existed".
+STRATEGY_EPOCH: str = "2026-08-26T04:33:51+00:00"
+
 # Trading pairs — Hyperliquid perpetual futures (coin symbol only)
 # Selected for: high Hyperliquid volume + TradFi presence (CME/ETF/institutional)
 PAIRS: list[str] = [

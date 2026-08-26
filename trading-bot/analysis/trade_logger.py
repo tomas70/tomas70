@@ -19,6 +19,7 @@ from typing import Optional
 import pandas as pd
 
 from .market_data import get_ohlcv
+from config import STRATEGY_EPOCH
 
 logger = logging.getLogger(__name__)
 
@@ -281,14 +282,34 @@ def _expectancy(subset: list[dict]) -> Optional[float]:
     return round(total / len(subset), 2)
 
 
-def get_stats() -> dict:
+def get_stats(all_time: bool = False) -> dict:
     """
     Win rate AND expectancy, broken down by entry type, OB confluence, and
     R:R band. The R:R bands exist to answer one question directly: whether
     the low-R:R setups admitted by a lower MIN_RR_RATIO carry their weight
     or drag the average down.
+
+    By default (all_time=False), only rows logged at/after
+    config.STRATEGY_EPOCH count. trade_log.csv accumulates forever across
+    every past version of the setup-detection logic, so an unfiltered
+    view permanently blends the current rules with whatever came before —
+    a real improvement (or regression) in the current system gets diluted
+    into whatever the historical average already was. Pass all_time=True
+    for the full unfiltered history (e.g. /log all).
     """
-    rows     = _read_rows()
+    rows = _read_rows()
+
+    excluded_old = 0
+    if not all_time:
+        epoch = datetime.fromisoformat(STRATEGY_EPOCH)
+        kept = []
+        for r in rows:
+            if datetime.fromisoformat(r["logged_at"]) >= epoch:
+                kept.append(r)
+            else:
+                excluded_old += 1
+        rows = kept
+
     resolved = [r for r in rows if r["status"] in ("tp1_hit", "sl_hit", "expired")]
     pending  = [r for r in rows if r["status"] == "pending"]
 
@@ -324,6 +345,7 @@ def get_stats() -> dict:
 
     ob_yes = [r for r in resolved if str(r.get("ob_confluence")) == "True"]
     ob_no  = [r for r in resolved if str(r.get("ob_confluence")) == "False"]
+    by_ob  = {"with_ob": summarize(ob_yes), "without_ob": summarize(ob_no)}
 
     overall = summarize(resolved)
 
@@ -340,6 +362,10 @@ def get_stats() -> dict:
         "expectancy":    overall["expectancy"],
         "by_type":       by_type,
         "by_rr":         by_rr,
+        "by_ob":         by_ob,
+        "all_time":      all_time,
+        "epoch":         STRATEGY_EPOCH,
+        "excluded_old":  excluded_old,
         "ob_yes_wr":     win_rate(ob_yes),
         "ob_no_wr":      win_rate(ob_no),
         "ob_yes_n":      len(ob_yes),

@@ -183,9 +183,11 @@ def handle_command(command: str, args: list[str]) -> str:
         return "🔄 Skenuoju rinkas...\n\n" + scan_markets(silent=True)
 
     if command == "/log":
-        s = get_stats()
+        all_time = bool(args) and args[0].lower() == "all"
+        s = get_stats(all_time=all_time)
         if s["total"] == 0:
             return "📋 <b>Trade Log</b>\n\nDar nėra užrašytų setup'ų."
+
         def fmt(info: dict) -> str:
             """'12 → 25.0% (baz. 30.0%, edge -5.0pp), +0.31R' — vs. random-walk baseline."""
             if not info["count"]:
@@ -201,8 +203,19 @@ def handle_command(command: str, args: list[str]) -> str:
         edge  = f"{s['edge_pp']:+.1f}pp" if s["edge_pp"] is not None else "—"
         exp   = f"{s['expectancy']:+.2f}R" if s["expectancy"] is not None else "—"
 
+        if all_time:
+            scope_note = "<i>Visa istorija — maišo visas praeities strategijos versijas.</i>"
+        else:
+            epoch_date = s["epoch"][:10]
+            scope_note = (
+                f"<i>Tik nuo paskutinio strategijos pakeitimo ({epoch_date}) — "
+                f"{s['excluded_old']} senesnių setup'ų neįskaičiuota. "
+                f"Pilnai istorijai: <code>/log all</code></i>"
+            )
+
         lines = [
-            "📋 <b>Trade Log</b>\n",
+            "📋 <b>Trade Log</b>",
+            scope_note + "\n",
             f"Iš viso: {s['total']} setup'ų  |  Laukia: {s['pending']}",
             f"Išspręsta: {s['resolved']}  →  TP1: {s['tp1_hit']}  SL: {s['sl_hit']}  Expired: {s['expired']}",
             f"<b>Win rate: {wr}</b>  (atsitiktinumo riba: {bl}, edge: {edge})",
@@ -218,12 +231,11 @@ def handle_command(command: str, args: list[str]) -> str:
         for band, info in s["by_rr"].items():
             lines.append(f"  {band}: {fmt(info)}")
 
-        if s["ob_yes_n"] or s["ob_no_n"]:
+        by_ob = s.get("by_ob", {})
+        if by_ob.get("with_ob", {}).get("count") or by_ob.get("without_ob", {}).get("count"):
             lines.append("\n<b>OB confluence:</b>")
-            ob_y = f"{s['ob_yes_wr']:.1f}%" if s["ob_yes_wr"] is not None else "—"
-            ob_n = f"{s['ob_no_wr']:.1f}%"  if s["ob_no_wr"]  is not None else "—"
-            lines.append(f"  Su OB:  {s['ob_yes_n']} → {ob_y} TP1")
-            lines.append(f"  Be OB:  {s['ob_no_n']} → {ob_n} TP1")
+            lines.append(f"  Su OB:  {fmt(by_ob['with_ob'])}")
+            lines.append(f"  Be OB:  {fmt(by_ob['without_ob'])}")
         return "\n".join(lines)
 
     if command == "/status":
