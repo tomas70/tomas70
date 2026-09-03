@@ -310,6 +310,12 @@ def _try_sweep_setup(
         ("bearish", prev_day["high"], "prev_day_high"),
     ]
 
+    # Collect every qualifying direction before choosing one. Returning on
+    # the first match instead would hand a permanent advantage to whichever
+    # entry this list happens to start with: on any bar where both a swept
+    # low and a swept high qualify, bullish would always win purely because
+    # it is listed first.
+    qualifying = []
     for bias, level, level_name in candidates:
         if bias_4h != "ranging" and bias_4h != bias:
             continue  # 4H actively opposes this direction
@@ -322,48 +328,55 @@ def _try_sweep_setup(
         if disp_i is None:
             continue  # level was reclaimed but nobody committed to the move
 
-        # Entry: retest of the imbalance the displacement left, at its
-        # proximal edge (the side price reaches first on the retrace).
-        # No FVG means the impulse was continuous — fall back to the
-        # reclaimed level itself, which is the same idea one step wider.
-        entry_fvg = find_entry_fvg(df_15m, bias, disp_i)
-        if entry_fvg is not None:
-            entry = entry_fvg.top if bias == "bullish" else entry_fvg.bottom
-        else:
-            entry = level
+        qualifying.append((sweep, disp_i, bias, level))
 
-        # Invalidation is the sweep extreme: if price trades back through
-        # it, the level did not hold and the premise is gone.
-        sweep_low  = float(df_15m["low"].iloc[sweep.index])
-        sweep_high = float(df_15m["high"].iloc[sweep.index])
-        sl = (
-            sweep_low  * (1 - SL_BUFFER_PCT) if bias == "bullish"
-            else sweep_high * (1 + SL_BUFFER_PCT)
-        )
+    if not qualifying:
+        return None, "No sweep setup (needs reclaimed daily level + displacement, 4H not opposing)"
 
-        obs_1h     = find_order_blocks(df_1h, bias)
-        active_obs = [ob for ob in obs_1h if not ob.mitigated]
-        atr_1h     = calculate_atr(df_1h)
-        nearest_ob = _find_nearest_ob(active_obs, current_price, bias, atr_1h) if active_obs else None
+    # Freshest sweep wins — the most recent rejection is the one still being
+    # traded, and it's a property of the market rather than of list order.
+    sweep, disp_i, bias, level = max(qualifying, key=lambda q: q[0].index)
 
-        return {
-            "bias":        bias,
-            "entry":       entry,
-            "sl":          sl,
-            "entry_type":  "SWEEP",
-            "ross_hook":   None,
-            "order_block": nearest_ob,   # info only for this setup, not a gate
-            "fvg":         entry_fvg,
-            "sweep": {
-                "level":       sweep.level,
-                "level_name":  sweep.level_name,
-                "candles_ago": sweep.candles_ago,
-                "displacement_index": disp_i,
-                "has_fvg":     entry_fvg is not None,
-            },
-        }, ""
+    # Entry: retest of the imbalance the displacement left, at its
+    # proximal edge (the side price reaches first on the retrace).
+    # No FVG means the impulse was continuous — fall back to the
+    # reclaimed level itself, which is the same idea one step wider.
+    entry_fvg = find_entry_fvg(df_15m, bias, disp_i)
+    if entry_fvg is not None:
+        entry = entry_fvg.top if bias == "bullish" else entry_fvg.bottom
+    else:
+        entry = level
 
-    return None, "No sweep setup (needs reclaimed daily level + displacement, 4H not opposing)"
+    # Invalidation is the sweep extreme: if price trades back through
+    # it, the level did not hold and the premise is gone.
+    sweep_low  = float(df_15m["low"].iloc[sweep.index])
+    sweep_high = float(df_15m["high"].iloc[sweep.index])
+    sl = (
+        sweep_low  * (1 - SL_BUFFER_PCT) if bias == "bullish"
+        else sweep_high * (1 + SL_BUFFER_PCT)
+    )
+
+    obs_1h     = find_order_blocks(df_1h, bias)
+    active_obs = [ob for ob in obs_1h if not ob.mitigated]
+    atr_1h     = calculate_atr(df_1h)
+    nearest_ob = _find_nearest_ob(active_obs, current_price, bias, atr_1h) if active_obs else None
+
+    return {
+        "bias":        bias,
+        "entry":       entry,
+        "sl":          sl,
+        "entry_type":  "SWEEP",
+        "ross_hook":   None,
+        "order_block": nearest_ob,   # info only for this setup, not a gate
+        "fvg":         entry_fvg,
+        "sweep": {
+            "level":       sweep.level,
+            "level_name":  sweep.level_name,
+            "candles_ago": sweep.candles_ago,
+            "displacement_index": disp_i,
+            "has_fvg":     entry_fvg is not None,
+        },
+    }, ""
 
 
 # ─── Main Analysis Entry Point ────────────────────────────────────────────────
