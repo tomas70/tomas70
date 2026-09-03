@@ -23,7 +23,7 @@ from analysis.global_trend import check_global_trend
 from analysis.multi_timeframe import (
     _try_hook_setup, _try_sweep_setup, _build_levels, TP1_MAX_AGE_4H,
 )
-from config import MIN_RR_RATIO, PAIRS
+from config import HOOK_SETUP_ENABLED, MIN_RR_RATIO, PAIRS
 
 
 def diagnose(pair: str) -> None:
@@ -43,7 +43,12 @@ def diagnose(pair: str) -> None:
     structure_4h = detect_market_structure(df_4h)
     bias_4h      = structure_4h["bias"]
 
-    setup, hook_reason = _try_hook_setup(df_15m, df_1h, bias_4h, current_price)
+    # Mirror production: HOOK only runs when enabled (see config.HOOK_SETUP_ENABLED)
+    if HOOK_SETUP_ENABLED:
+        setup, hook_reason = _try_hook_setup(df_15m, df_1h, bias_4h, current_price)
+    else:
+        setup, hook_reason = None, "HOOK disabled"
+
     sweep_reason = ""
     if setup is None:
         setup, sweep_reason = _try_sweep_setup(df_15m, df_1h, bias_4h, current_price)

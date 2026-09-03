@@ -58,6 +58,7 @@ FILES=(
     analysis/liquidity.py
     analysis/trade_logger.py
     analysis/hyperliquid_account.py
+    analysis/liquidity_walls.py
     ai/__init__.py
     ai/claude_analyst.py
     notifications/__init__.py
@@ -98,7 +99,7 @@ else
     if "$VENV_PY" -c "
 import analysis.market_data, analysis.smc, analysis.ross_hook
 import analysis.multi_timeframe, analysis.global_trend, analysis.liquidity
-import analysis.trade_logger, analysis.hyperliquid_account
+import analysis.trade_logger, analysis.hyperliquid_account, analysis.liquidity_walls
 import ai.claude_analyst, notifications.telegram_bot, notifications.bot_commands
 import risk.position_sizer
 print('✅ visi moduliai importuojasi')

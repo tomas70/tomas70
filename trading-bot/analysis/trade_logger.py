@@ -33,6 +33,9 @@ COLUMNS = [
     "tp1_structural", "tp1_age_4h", "hook_candles_ago",
     "daily_bias", "market_regime",
     "sweep_level", "sweep_candles_ago", "sweep_has_fvg",
+    # Recorded for a later comparison: would a stop behind the nearest real
+    # order-book wall have survived where the SL actually used did not?
+    "wall_price", "wall_dist_pct", "wall_size_vs_median",
     "status", "outcome_at", "outcome_candles",
 ]
 
@@ -106,6 +109,7 @@ def log_setup(result: dict) -> None:
     hook  = result.get("ross_hook") or {}
     gt    = result.get("global_trend") or {}
     sweep = result.get("sweep") or {}
+    wall  = result.get("liquidity_wall") or {}
     row = {
         "id":               str(uuid.uuid4())[:8],
         "logged_at":        datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -128,6 +132,9 @@ def log_setup(result: dict) -> None:
         "sweep_level":        sweep.get("level_name", ""),
         "sweep_candles_ago":  sweep.get("candles_ago", ""),
         "sweep_has_fvg":      sweep.get("has_fvg", ""),
+        "wall_price":           wall.get("price", ""),
+        "wall_dist_pct":        wall.get("distance_pct", ""),
+        "wall_size_vs_median":  wall.get("size_vs_median", ""),
         "status":           "pending",
         "outcome_at":       "",
         "outcome_candles":  "",

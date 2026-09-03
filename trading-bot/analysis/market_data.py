@@ -70,6 +70,17 @@ def _post_with_retry(payload: dict, timeout: int = 10) -> httpx.Response:
     raise last_exc
 
 
+def post_info(payload: dict, timeout: int = 10) -> dict:
+    """
+    Public wrapper around the retrying POST: sends `payload` to Hyperliquid's
+    info endpoint and returns the parsed JSON.
+
+    Exists so every module reading Hyperliquid's public API shares one
+    definition of retry/backoff behaviour instead of each keeping its own copy.
+    """
+    return _post_with_retry(payload, timeout).json()
+
+
 def _fetch_from_hyperliquid(pair: str, timeframe: str, limit: int) -> pd.DataFrame:
     """Calls Hyperliquid public candleSnapshot endpoint — no API key required."""
     end_ms   = int(time.time() * 1000)

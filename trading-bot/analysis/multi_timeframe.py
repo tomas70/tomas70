@@ -81,7 +81,8 @@ from .global_trend import check_global_trend
 from .liquidity import (
     detect_sweep, find_displacement_in_range, find_entry_fvg, get_previous_day_range,
 )
-from config import MIN_RR_RATIO
+from .liquidity_walls import nearest_protective_wall
+from config import HOOK_SETUP_ENABLED, MIN_RR_RATIO
 
 logger = logging.getLogger(__name__)
 
@@ -409,7 +410,15 @@ def get_full_analysis(pair: str) -> dict:
     bias_4h      = structure_4h["bias"]
 
     # ── Setup Selection ───────────────────────────────────────────────────────
-    setup, hook_reason = _try_hook_setup(df_15m, df_1h, bias_4h, current_price)
+    # HOOK is behind a flag rather than removed: it lost to a coin flip in
+    # every sample measured, but the suspicion is its OB-derived stop rather
+    # than its entry signal, so it's meant to come back with a wall-based
+    # stop (see config.HOOK_SETUP_ENABLED).
+    if HOOK_SETUP_ENABLED:
+        setup, hook_reason = _try_hook_setup(df_15m, df_1h, bias_4h, current_price)
+    else:
+        setup, hook_reason = None, "HOOK disabled"
+
     if setup is None:
         setup, sweep_reason = _try_sweep_setup(df_15m, df_1h, bias_4h, current_price)
         if setup is None:
@@ -463,6 +472,14 @@ def get_full_analysis(pair: str) -> dict:
     if not global_trend["ok"]:
         return {"valid": False, "reason": global_trend["reason"]}
 
+    # ── Liquidity wall (recorded, NOT yet used for entry/SL/TP) ───────────────
+    # Observational only, on purpose. The open question is whether a stop
+    # behind a real resting wall would survive where the OB-derived stop
+    # didn't — that can be answered from logged data without risking the one
+    # setup currently holding above breakeven. Wiring it into SL now would
+    # change SWEEP mid-measurement and destroy the only clean signal we have.
+    wall = nearest_protective_wall(pair, entry, bias)
+
     logger.info(
         "Valid setup: %s %s [%s] | entry=%.5f SL=%.5f TP1=%.5f RR=%.2f | 1D=%s BTC=%s",
         pair, bias.upper(), entry_type,
@@ -488,5 +505,14 @@ def get_full_analysis(pair: str) -> dict:
         "pd_zone":       pd_info,
         "global_trend":  global_trend,
         "sweep":         setup["sweep"],
+        "liquidity_wall": (
+            {
+                "price":          wall.price,
+                "size":           wall.size,
+                "distance_pct":   round(wall.distance_pct, 3),
+                "size_vs_median": wall.size_vs_median,
+            }
+            if wall else None
+        ),
         **levels,
     }

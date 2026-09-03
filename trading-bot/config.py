@@ -15,6 +15,16 @@ ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
 # Required for balance/status to work; the bot never signs or trades.
 HYPERLIQUID_ADDRESS: str = os.getenv("HYPERLIQUID_ADDRESS", "")
 
+# Ross Hook continuation setup. Disabled after it underperformed a coin flip
+# in every window measured: -7.2pp edge over 92 pre-epoch trades, then
+# -18.1pp (n=11) and -17.6pp (n=17) under the current rules, expectancy stuck
+# near -0.57R throughout, and the 6 trades added between the last two
+# readings went 1W/5L rather than reversing it. Kept as a flag, not deleted,
+# because the plan is to revisit it with an order-book-wall stop instead of
+# the OB-derived one (see analysis/liquidity_walls.py) — the entry signal may
+# well be sound while the stop placement is what keeps failing.
+HOOK_SETUP_ENABLED: bool = False
+
 # Cutoff for /log statistics: rows logged before this are excluded from the
 # DEFAULT (epoch-filtered) view. Bump this to "now" whenever a change to
 # setup detection/gating logic ships — trade_log.csv accumulates forever, so
@@ -22,10 +32,10 @@ HYPERLIQUID_ADDRESS: str = os.getenv("HYPERLIQUID_ADDRESS", "")
 # with the current one, and a real improvement (or regression) gets diluted
 # into invisibility. Full unfiltered history is still available via /log all.
 #
-# Last bumped: liquidity sweep setup + anti-fake-breakout margin on Ross
-# Hook + MIN_RR_RATIO 3.0->1.5 all shipped together — this marks "after all
-# of that, before which none of the current entry logic existed".
-STRATEGY_EPOCH: str = "2026-08-26T04:33:51+00:00"
+# Last bumped: HOOK disabled + MIN_RR_RATIO restored to 3.0. From here the
+# only setup generating alerts is SWEEP at RR>=3, so this window measures
+# that one thing cleanly instead of a HOOK/SWEEP blend at two RR floors.
+STRATEGY_EPOCH: str = "2026-09-03T09:41:14+00:00"
 
 # Trading pairs — Hyperliquid perpetual futures (coin symbol only)
 # Selected for: high Hyperliquid volume + TradFi presence (CME/ETF/institutional)
@@ -64,12 +74,13 @@ SCAN_INTERVAL_MINUTES: int = 15
 
 # Risk management (hardcoded)
 RISK_PERCENTAGE: float = 0.30       # 30% of balance per trade
-# Minimum Risk:Reward ratio. Lowered 3.0 -> 1.5 deliberately: at 1.5R the
-# system needs a ~40% win rate to break even, well above the ~10% the trade
-# log currently shows. The tradeoff accepted here is that more setups pass,
-# so /log accumulates the HOOK-vs-SWEEP evidence faster — the threshold is
-# meant to be raised again once that data says which setup actually works.
-MIN_RR_RATIO: float = 1.5
+# Minimum Risk:Reward ratio. Restored to 3.0 after the 1.5 experiment:
+# the extra setups the lower threshold admitted lost money as a group
+# (1.5-2 band: -0.60R over 7 trades; 2-3 band: 0 wins in 3, and 0 wins in 2
+# at the prior reading), while everything at 3.0+ was the only band holding
+# above breakeven. The looser threshold bought faster data at the cost of
+# systematically worse setups, and the data it bought says to undo it.
+MIN_RR_RATIO: float = 3.0
 LEVERAGE: int = 5                   # Max leverage
 MAX_OPEN_POSITIONS: int = 1
 MIN_CONFIDENCE_SCORE: int = 7
