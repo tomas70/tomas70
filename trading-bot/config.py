@@ -37,6 +37,22 @@ HOOK_SETUP_ENABLED: bool = False
 # that one thing cleanly instead of a HOOK/SWEEP blend at two RR floors.
 STRATEGY_EPOCH: str = "2026-09-03T09:41:14+00:00"
 
+# ── Pair selection ────────────────────────────────────────────────────────────
+# Scan every perp that is actually liquid right now instead of a fixed list.
+# A pair qualifies on EITHER metric: a market can be worth trading on strong
+# turnover with modest positioning open, or the reverse.
+USE_DYNAMIC_PAIRS: bool = True
+MIN_DAY_VOLUME_USD: float    = 50_000_000   # 24h notional volume
+MIN_OPEN_INTEREST_USD: float = 50_000_000   # open interest, converted to USD
+
+# Hard cap on how many pairs a scan covers. Each pair costs 3 candle requests
+# every 15 minutes (15m/1h/4h), so this bounds both scan duration and the
+# request rate against Hyperliquid — without it, a bull market that lifts 150
+# perps over the threshold would quietly turn one scan into 450 requests.
+MAX_ACTIVE_PAIRS: int = 60
+
+# Fallback list, used when USE_DYNAMIC_PAIRS is False or exchange metadata
+# can't be read. Kept as the known-good core rather than deleted.
 # Trading pairs — Hyperliquid perpetual futures (coin symbol only)
 # Selected for: high Hyperliquid volume + TradFi presence (CME/ETF/institutional)
 PAIRS: list[str] = [

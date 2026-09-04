@@ -130,8 +130,14 @@ def get_ohlcv(
     Uses in-memory cache (14 min TTL); falls back to stale cache on network error.
     No API key required — Hyperliquid public REST.
     """
-    if pair not in PAIRS:
-        raise ValueError(f"Unsupported pair: {pair}. Allowed: {PAIRS}")
+    # Format check only, not membership in the static PAIRS list: the active
+    # pair set is now discovered from the exchange (see pair_selection), so a
+    # symbol can legitimately be one this file has never heard of. A genuinely
+    # unknown coin comes back as an empty candle list, which callers already
+    # handle. (Validating against pair_selection here would be circular — it
+    # imports this module.)
+    if not isinstance(pair, str) or not pair.strip():
+        raise ValueError(f"Invalid pair symbol: {pair!r}")
     if timeframe not in SUPPORTED_TIMEFRAMES:
         raise ValueError(f"Unsupported timeframe: {timeframe}. Allowed: {SUPPORTED_TIMEFRAMES}")
 

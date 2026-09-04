@@ -36,7 +36,8 @@ from ai.claude_analyst import generate_setup_standalone
 from notifications.telegram_bot import format_setup_message, send_telegram
 from notifications.bot_commands import listen_for_commands
 from risk.position_sizer import get_current_level, get_position_summary
-from config import PAIRS, SCAN_INTERVAL_MINUTES, MIN_CONFIDENCE_SCORE
+from analysis.pair_selection import get_liquid_pairs
+from config import SCAN_INTERVAL_MINUTES, MIN_CONFIDENCE_SCORE
 
 logging.basicConfig(
     level=logging.INFO,
@@ -90,7 +91,12 @@ def scan_markets(silent: bool = False) -> str:
     level_info = get_current_level(balance)
     now        = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    logger.info("[%s] Skenuojamos rinkos | Level %d | $%.2f", now, level_info["level"], balance)
+    pairs = get_liquid_pairs()
+
+    logger.info(
+        "[%s] Skenuojamos rinkos | Level %d | $%.2f | %d porų",
+        now, level_info["level"], balance, len(pairs),
+    )
 
     update_all_pending_outcomes()
 
@@ -99,7 +105,7 @@ def scan_markets(silent: bool = False) -> str:
     best_rr       = 0.0
     checked       = []
 
-    for pair in PAIRS:
+    for pair in pairs:
         try:
             analysis = get_full_analysis(pair)
         except Exception as exc:
@@ -160,7 +166,7 @@ def scan_markets(silent: bool = False) -> str:
             f"❌ {reason}: {', '.join(pairs)}"
             for reason, pairs in reasons.items()
         )
-        return f"🔍 Skenuota {len(PAIRS)} porų. Nėra setup'ų. FLAT.\n\n{summary}"
+        return f"🔍 Skenuota {len(pairs)} porų. Nėra setup'ų. FLAT.\n\n{summary}"
 
 
 # ─── Telegram command handler ─────────────────────────────────────────────────

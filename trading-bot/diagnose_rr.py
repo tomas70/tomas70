@@ -23,7 +23,8 @@ from analysis.global_trend import check_global_trend
 from analysis.multi_timeframe import (
     _try_hook_setup, _try_sweep_setup, _build_levels, TP1_MAX_AGE_4H,
 )
-from config import HOOK_SETUP_ENABLED, MIN_RR_RATIO, PAIRS
+from analysis.pair_selection import get_liquid_pairs
+from config import HOOK_SETUP_ENABLED, MIN_RR_RATIO
 
 
 def diagnose(pair: str) -> None:
@@ -99,9 +100,10 @@ def diagnose(pair: str) -> None:
 
 
 if __name__ == "__main__":
-    print(f"{'PAIR':6} | setup / gates ...")
+    pairs = get_liquid_pairs()
+    print(f"{'PAIR':6} | setup / gates ...   ({len(pairs)} liquid pairs)")
     print("-" * 120)
-    for pair in PAIRS:
+    for pair in pairs:
         diagnose(pair)
 
     print(f"\nLegend: ✅ RR>={MIN_RR_RATIO}  🟡 RR>=2.0  🔴 RR<2.0")
