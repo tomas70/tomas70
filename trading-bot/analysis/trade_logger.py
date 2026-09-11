@@ -164,6 +164,15 @@ def simulate_walk(
     (gap/spike), TP is credited — standard backtesting convention when
     intra-candle order is unknown.
 
+    The search is bounded to `max_candles` bars, not just the expiry
+    verdict. That bound is the whole definition of the trade: "did this
+    reach TP within 48h", not "did price ever get there eventually".
+    Leaving the scan unbounded made results depend on how much history the
+    caller happened to fetch — harmless in production, where get_ohlcv
+    returns ~200 bars anyway, but badly wrong in offline replay, which
+    fetches weeks of data and would hand older setups weeks of runway
+    while newer ones got hours.
+
     Returns (status, outcome_at, candles). status is None when `df`
     doesn't yet contain enough history past `logged_at` to resolve either
     way — the caller should treat that as "not resolvable from this data"
@@ -173,7 +182,7 @@ def simulate_walk(
     if after.empty:
         return None, None, None
 
-    for idx, candle in after.iterrows():
+    for idx, candle in after.iloc[:max_candles].iterrows():
         tp_hit = candle["high"] >= tp if bias == "bullish" else candle["low"] <= tp
         sl_hit = candle["low"]  <= sl if bias == "bullish" else candle["high"] >= sl
 
