@@ -82,7 +82,7 @@ from .liquidity import (
     detect_sweep, find_displacement_in_range, find_entry_fvg, get_previous_day_range,
 )
 from .liquidity_walls import nearest_protective_wall
-from config import HOOK_SETUP_ENABLED, MIN_RR_RATIO
+from config import HOOK_SETUP_ENABLED, MIN_RR_RATIO, TP1_FIXED_PCT
 
 logger = logging.getLogger(__name__)
 
@@ -145,39 +145,49 @@ def _tp_targets(
     last_index_4h: int,
 ) -> dict:
     """
-    Derive TP1 / TP2 from the nearest 4H structural swing levels beyond entry.
+    TP1 is a fixed percentage of entry (TP1_FIXED_PCT); TP2 remains the
+    nearest unswept 4H swing beyond it, as a runner target.
 
-    swing_highs/swing_lows must already be pre-filtered to unswept liquidity
-    (see filter_unswept_swings) — an already-closed-through swing has no
-    resting liquidity left at it and isn't a real target, even though it's
-    still "beyond entry" by price alone.
+    TP1 used to be that swing, and it was the single biggest loser in the
+    system. Replaying 23 logged setups showed why: the swing averaged ~6.8
+    stop-distances away and was reached 8.7% of the time, matching the
+    4.3% seen live. Every nearer target tested beat it.
 
-    Falls back to a flat % target when no unswept swing lies beyond entry —
-    flagged via tp1_structural=False so callers can warn that the level
-    isn't backed by real 4H structure (and a high R:R off it is more
-    speculative).
+    The reason is structural, not just empirical. SWEEP's stop sits beyond
+    the sweep extreme, and sweep depth is arbitrary — it records how far a
+    stop hunt happened to run, not how far the move afterwards will go. A
+    target expressed as a multiple of that stop inherits the arbitrariness;
+    a fixed percentage asks the same move of every setup regardless of how
+    deep the hunt went.
 
-    TP2 is always pushed at least 2% beyond TP1, whichever path produced
-    each. Without this, a lone real swing standing farther out than the
-    flat-% TP2 fallback (e.g. TP1 at +6.4% with only one swing found, TP2
-    fallback flat at +6%) would leave TP2 closer than TP1 — a target that
-    isn't "further", contradicting what TP2 is supposed to mean.
+    Caveat worth keeping in view: 1% and 2% both tested positive (+0.62R,
+    +0.80R) but neither survives correction for having tried 12 target
+    variants against 23 trades, and the R-multiple and fixed-% tables
+    disagree in sign at comparable distances. TP1_FIXED_PCT is therefore
+    set inside a consistently-positive band rather than at the best single
+    point, and is a bet on that band, not a proven value.
+
+    swing_highs/swing_lows must already be pre-filtered to unswept
+    liquidity (see filter_unswept_swings). TP2 is pushed at least 2% beyond
+    TP1 so it always means "further", even when no swing qualifies.
     """
     if bias == "bullish":
-        above  = sorted((sp for sp in swing_highs if sp.price > entry), key=lambda sp: sp.price)
-        tp1_sp = above[0] if above else None
-        tp1    = tp1_sp.price if tp1_sp else round(entry * 1.03, 8)
+        tp1 = round(entry * (1 + TP1_FIXED_PCT), 8)
 
-        further = above[1].price if len(above) > 1 else round(entry * 1.06, 8)
+        above   = sorted((sp for sp in swing_highs if sp.price > tp1), key=lambda sp: sp.price)
+        tp1_sp  = above[0] if above else None
+        further = tp1_sp.price if tp1_sp else round(entry * (1 + TP1_FIXED_PCT * 3), 8)
         tp2     = round(max(further, tp1 * 1.02), 8)
     else:
-        below  = sorted((sp for sp in swing_lows if sp.price < entry), key=lambda sp: sp.price, reverse=True)
-        tp1_sp = below[0] if below else None
-        tp1    = tp1_sp.price if tp1_sp else round(entry * 0.97, 8)
+        tp1 = round(entry * (1 - TP1_FIXED_PCT), 8)
 
-        further = below[1].price if len(below) > 1 else round(entry * 0.94, 8)
+        below   = sorted((sp for sp in swing_lows if sp.price < tp1), key=lambda sp: sp.price, reverse=True)
+        tp1_sp  = below[0] if below else None
+        further = tp1_sp.price if tp1_sp else round(entry * (1 - TP1_FIXED_PCT * 3), 8)
         tp2     = round(min(further, tp1 * 0.98), 8)
 
+    # Reported for context only now that TP1 no longer sits on a swing: it
+    # says whether real structure backs the runner target, not TP1 itself.
     tp1_age = (last_index_4h - tp1_sp.index) if tp1_sp else None
 
     return {"tp1": tp1, "tp2": tp2, "tp1_age": tp1_age, "tp1_structural": tp1_sp is not None}
@@ -485,6 +495,11 @@ def get_full_analysis(pair: str) -> dict:
     if not global_trend["ok"]:
         return {"valid": False, "reason": global_trend["reason"]}
 
+    # Recorded so a volatility-scaled target can be evaluated from logged data
+    # later without another blind cycle: a fixed % asks the same move of BTC
+    # and of a thin alt, while ATR asks each pair for a move it actually makes.
+    atr_pct = round(calculate_atr(df_15m) / current_price * 100, 4) if current_price else None
+
     # ── Liquidity wall (recorded, NOT yet used for entry/SL/TP) ───────────────
     # Observational only, on purpose. The open question is whether a stop
     # behind a real resting wall would survive where the OB-derived stop
@@ -518,6 +533,7 @@ def get_full_analysis(pair: str) -> dict:
         "pd_zone":       pd_info,
         "global_trend":  global_trend,
         "sweep":         setup["sweep"],
+        "atr_15m_pct":   atr_pct,
         "liquidity_wall": (
             {
                 "price":          wall.price,

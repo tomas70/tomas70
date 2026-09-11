@@ -32,10 +32,11 @@ HOOK_SETUP_ENABLED: bool = False
 # with the current one, and a real improvement (or regression) gets diluted
 # into invisibility. Full unfiltered history is still available via /log all.
 #
-# Last bumped: HOOK disabled + MIN_RR_RATIO restored to 3.0. From here the
-# only setup generating alerts is SWEEP at RR>=3, so this window measures
-# that one thing cleanly instead of a HOOK/SWEEP blend at two RR floors.
-STRATEGY_EPOCH: str = "2026-09-03T09:41:14+00:00"
+# Last bumped: TP1 switched from the nearest unswept 4H swing to a fixed 2%
+# of entry, with MIN_RR_RATIO moved 3.0 -> 2.0 to match. This is the change
+# the replay pointed at — the old target was reached 8.7% of the time — so
+# this window measures whether a reachable target actually fixes it.
+STRATEGY_EPOCH: str = "2026-09-11T18:01:23+00:00"
 
 # ── Pair selection ────────────────────────────────────────────────────────────
 # Scan every perp that is actually liquid right now instead of a fixed list.
@@ -90,13 +91,23 @@ SCAN_INTERVAL_MINUTES: int = 15
 
 # Risk management (hardcoded)
 RISK_PERCENTAGE: float = 0.30       # 30% of balance per trade
-# Minimum Risk:Reward ratio. Restored to 3.0 after the 1.5 experiment:
-# the extra setups the lower threshold admitted lost money as a group
-# (1.5-2 band: -0.60R over 7 trades; 2-3 band: 0 wins in 3, and 0 wins in 2
-# at the prior reading), while everything at 3.0+ was the only band holding
-# above breakeven. The looser threshold bought faster data at the cost of
-# systematically worse setups, and the data it bought says to undo it.
-MIN_RR_RATIO: float = 3.0
+# TP1 as a fixed fraction of entry price, replacing the 4H-swing target that
+# was the system's biggest single loser (reached 8.7% of the time in replay,
+# 4.3% live). Set inside the 1-2% band where replay was consistently
+# positive rather than at its best single point (2% scored highest at
+# +0.80R), because 12 target variants were tried against 23 trades and none
+# survives correction for that. 2% over 1% because trading costs eat a
+# proportionally smaller share of the larger target.
+TP1_FIXED_PCT: float = 0.02
+
+# Minimum Risk:Reward ratio. Lowered 3.0 -> 2.0 because TP1 is no longer a
+# swing that can sit arbitrarily far away: with a fixed 2% target, R:R is
+# just 2% / stop-width, which averaged ~2.45 across logged setups. Leaving
+# the gate at 3.0 would have rejected almost everything. Its meaning
+# changes accordingly — from "is the structure far enough to be worth it"
+# to "is the stop tight enough that 2% is worth the risk", which rejects
+# setups where the sweep ran so deep that risk is disproportionate.
+MIN_RR_RATIO: float = 2.0
 LEVERAGE: int = 5                   # Max leverage
 MAX_OPEN_POSITIONS: int = 1
 MIN_CONFIDENCE_SCORE: int = 7

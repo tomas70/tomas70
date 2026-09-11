@@ -36,6 +36,7 @@ COLUMNS = [
     # Recorded for a later comparison: would a stop behind the nearest real
     # order-book wall have survived where the SL actually used did not?
     "wall_price", "wall_dist_pct", "wall_size_vs_median",
+    "atr_15m_pct",
     "status", "outcome_at", "outcome_candles",
 ]
 
@@ -135,6 +136,7 @@ def log_setup(result: dict) -> None:
         "wall_price":           wall.get("price", ""),
         "wall_dist_pct":        wall.get("distance_pct", ""),
         "wall_size_vs_median":  wall.get("size_vs_median", ""),
+        "atr_15m_pct":          result.get("atr_15m_pct", ""),
         "status":           "pending",
         "outcome_at":       "",
         "outcome_candles":  "",
