@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from analysis.market_data import get_ohlcv
 from analysis.trade_logger import MAX_OUTCOME_CANDLES, _read_rows, simulate_walk
+from config import STRATEGY_EPOCH
 
 # Expressed as a multiple of the row's own (already logged) SL distance.
 R_MULTIPLES = [0.5, 1.0, 1.5, 2.0, 3.0, 5.0, 7.0]
@@ -38,19 +39,40 @@ CANDLES_PER_HOUR = 4
 MAX_CANDLES_FETCH = 4000  # ~6 weeks of 15m data
 
 
-def _load_usable_rows() -> list[dict]:
+def _load_usable_rows(all_time: bool = False) -> list[dict]:
+    """
+    Logged setups with usable entry/SL, restricted to the current strategy
+    epoch unless all_time is set.
+
+    Epoch filtering matters more here than anywhere else: rows either side
+    of a bump came from different gating rules AND (after 2026-09-08) a
+    pair universe that turned over by more than half. Averaging across
+    that boundary produces a number describing no configuration that ever
+    actually ran — which is exactly how a replay can report a healthy
+    win rate for a setup that is losing live.
+    """
     rows = _read_rows()
-    usable = []
+    epoch = datetime.fromisoformat(STRATEGY_EPOCH)
+
+    usable, excluded_old = [], 0
     for r in rows:
         if not (r.get("entry") and r.get("sl") and r.get("logged_at") and r.get("bias")):
             continue
         try:
             entry, sl = float(r["entry"]), float(r["sl"])
+            logged_at = datetime.fromisoformat(r["logged_at"])
         except ValueError:
             continue
         if entry == sl:
             continue
+        if not all_time and logged_at < epoch:
+            excluded_old += 1
+            continue
         usable.append(r)
+
+    if excluded_old:
+        print(f"({excluded_old} setup'ų iš senesnių strategijos versijų neįskaičiuota — "
+              f"pilnai istorijai: --all)")
     return usable
 
 
@@ -92,12 +114,15 @@ def _summarize(statuses: list[str], r_mult: float) -> dict:
 
 
 def main() -> None:
-    rows = _load_usable_rows()
+    all_time = "--all" in sys.argv
+
+    rows = _load_usable_rows(all_time=all_time)
     if not rows:
         print("Nėra eilučių su entry/sl trade_log.csv faile dar.")
         return
 
-    print(f"Replaying {len(rows)} logged setups across {len(R_MULTIPLES)} TP distances...")
+    scope = "VISA istorija (maišo strategijos versijas)" if all_time else f"nuo epochos {STRATEGY_EPOCH[:10]}"
+    print(f"Replaying {len(rows)} logged setups across {len(R_MULTIPLES)} TP distances  [{scope}]...")
     df_by_pair = _fetch_pair_data(rows)
 
     # results[R]["ALL" | entry_type] -> list of status strings
@@ -164,6 +189,13 @@ def main() -> None:
         "atstumas. Tai atsako 'koks TP atstumas geriausias prie DABARTINIŲ entry/SL', o ne "
         "'koks geriausias entry/SL derinys'. Baseline apytiksliai (simetrinio atsitiktinio "
         "klaidžiojimo modelis) — naudok kaip apatinę ribą, ne tikslų skaičiavimą."
+    )
+    print(
+        "\nNELYGINK R tarp skirtingų setup tipų: R matuojamas TO PATIES setup'o SL atstumu, o "
+        "SL pločiai skiriasi iš esmės. TTE SL buvo signalo baro plotis (~0.2-0.5%), tad '7R' jam "
+        "reiškia ~1.5-3.5% judesį. SWEEP SL yra už sweep ekstremumo (platus), tad '7R' reiškia "
+        "kur kas didesnį judesį. Tas pats R skaičius = skirtingi reikalavimai rinkai. Palyginimas "
+        "prasmingas TIK juostos viduje (ta pati eilutė), ne tarp eilučių."
     )
 
 
