@@ -34,6 +34,13 @@ from config import STRATEGY_EPOCH
 # Expressed as a multiple of the row's own (already logged) SL distance.
 R_MULTIPLES = [0.5, 1.0, 1.5, 2.0, 3.0, 5.0, 7.0]
 
+# Fixed percentage of entry price, independent of stop width. Tested
+# alongside R multiples because the two behave differently in a way that
+# matters here: an R multiple inherits the stop's width, so a setup with a
+# wide stop (SWEEP's sits beyond the sweep extreme) gets a proportionally
+# distant target, while a fixed % asks the same move of every setup.
+FIXED_PCTS = [0.01, 0.02, 0.03, 0.05, 0.08]
+
 # 15m candles/hour; capped so one very old row can't trigger a runaway fetch
 CANDLES_PER_HOUR = 4
 MAX_CANDLES_FETCH = 4000  # ~6 weeks of 15m data
@@ -127,6 +134,10 @@ def main() -> None:
 
     # results[R]["ALL" | entry_type] -> list of status strings
     results: dict[float, dict[str, list[str]]] = {r: {"ALL": []} for r in R_MULTIPLES}
+    # Fixed-% variant: status list plus the realised R of each win, since a
+    # fixed % lands at a different R on every setup and expectancy has to be
+    # paid out at whatever R that trade actually reached.
+    pct_results: dict[float, list[tuple[str, float]]] = {p: [] for p in FIXED_PCTS}
     skipped_no_data = 0
     skipped_unresolved = 0
 
@@ -150,6 +161,14 @@ def main() -> None:
             results[r_mult]["ALL"].append(status)
             results[r_mult].setdefault(et, []).append(status)
 
+        for pct in FIXED_PCTS:
+            tp = entry * (1 + pct) if bias == "bullish" else entry * (1 - pct)
+            status, _, _ = simulate_walk(df, logged_at, bias, tp, sl, MAX_OUTCOME_CANDLES)
+            if status is None:
+                continue
+            realised_r = (entry * pct) / sl_dist if sl_dist > 0 else 0.0
+            pct_results[pct].append((status, realised_r))
+
     print(f"\n{'R multiple':>10} | {'n':>4} | {'TP':>4} | {'SL':>4} | {'Exp':>4} | "
           f"{'Win rate':>9} | {'Baseline':>9} | {'Edge':>7} | Expectancy")
     print("-" * 90)
@@ -162,6 +181,32 @@ def main() -> None:
             f"{r_mult:>10} | {s['n']:>4} | {s['wins']:>4} | {s['losses']:>4} | {s['expired']:>4} | "
             f"{s['win_rate']:>8.1f}% | {s['baseline']:>8.1f}% | {s['edge']:>+6.1f}p | {s['expectancy']:>+.3f}R"
         )
+
+    # ── Fixed-% targets ───────────────────────────────────────────────────────
+    print(f"\n{'Fiksuotas %':>11} | {'n':>4} | {'TP':>4} | {'SL':>4} | {'Exp':>4} | "
+          f"{'Win rate':>9} | {'vid. R':>7} | {'Reikia':>7} | Expectancy")
+    print("-" * 90)
+    for pct in FIXED_PCTS:
+        entries = pct_results[pct]
+        n = len(entries)
+        if n == 0:
+            print(f"{pct*100:>10.0f}% | no data")
+            continue
+        wins   = [r for st, r in entries if st == "tp1_hit"]
+        losses = sum(1 for st, _ in entries if st == "sl_hit")
+        expired = n - len(wins) - losses
+        win_rate = len(wins) / n * 100
+        avg_r    = sum(wins) / len(wins) if wins else 0.0
+        # Payout is each win's own realised R, since a fixed % is a different
+        # R on every setup; breakeven is set by the average R actually paid.
+        expectancy = (sum(wins) - losses) / n
+        avg_all_r  = sum(r for _, r in entries) / n
+        need = 1 / (1 + avg_all_r) * 100 if avg_all_r > 0 else 0.0
+        print(
+            f"{pct*100:>10.0f}% | {n:>4} | {len(wins):>4} | {losses:>4} | {expired:>4} | "
+            f"{win_rate:>8.1f}% | {avg_all_r:>6.2f}R | {need:>6.1f}% | {expectancy:>+.3f}R"
+        )
+    print("  ('vid. R' = koks R atstumas tas % vidutiniškai buvo; 'Reikia' = win rate nenuostolingumui)")
 
     print("\nPagal setup tipą:")
     entry_types = sorted({et for r_mult in R_MULTIPLES for et in results[r_mult] if et != "ALL"})
