@@ -32,11 +32,11 @@ HOOK_SETUP_ENABLED: bool = False
 # with the current one, and a real improvement (or regression) gets diluted
 # into invisibility. Full unfiltered history is still available via /log all.
 #
-# Last bumped: TP1 switched from the nearest unswept 4H swing to a fixed 2%
-# of entry, with MIN_RR_RATIO moved 3.0 -> 2.0 to match. This is the change
-# the replay pointed at — the old target was reached 8.7% of the time — so
-# this window measures whether a reachable target actually fixes it.
-STRATEGY_EPOCH: str = "2026-09-11T18:01:23+00:00"
+# Last bumped: SWEEP_LOOKBACK widened 12 -> 24 bars, one day after the TP1
+# change, while resetting still only cost about a day of data. Bumped
+# together so this window measures one configuration — fixed 2% TP at
+# MIN_RR 2.0 with a 6-hour sweep window — instead of a blend of two.
+STRATEGY_EPOCH: str = "2026-09-12T19:04:09+00:00"
 
 # ── Pair selection ────────────────────────────────────────────────────────────
 # Scan every perp that is actually liquid right now instead of a fixed list.

@@ -28,9 +28,21 @@ from .smc import FVG, find_fvg
 
 logger = logging.getLogger(__name__)
 
-# How far back to look for a sweep, in 15m candles. A sweep that happened
-# 3 hours ago has already had its reaction — the trade is gone.
-SWEEP_LOOKBACK = 12
+# How far back to look for a sweep, in 15m candles (24 = 6 hours).
+#
+# Widened from 12 after a live scan found 14 of 15 permitted directions
+# rejected for having no sweep inside a 3-hour window — a rate of roughly
+# 0.9 setups/day, which would have taken a month to produce enough trades
+# to judge anything by. This does not change what counts as a sweep, only
+# how long afterwards one stays actionable, and the reclaim-still-holds
+# check already retires a setup whose premise has broken. The entry is a
+# retrace into the displacement's FVG, which is often still unfilled hours
+# later.
+#
+# Self-checking: sweep_candles_ago is logged per setup, so whether sweeps
+# aged 3-6h actually perform worse than fresh ones is answerable from the
+# data this change itself produces.
+SWEEP_LOOKBACK = 24
 
 # Displacement: the rejection candle's BODY must be at least this many
 # 15m ATRs. Body (not range) because a long wick with a tiny body is
