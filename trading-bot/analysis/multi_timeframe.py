@@ -79,6 +79,7 @@ from .smc import (
 from .ross_hook import detect_ross_hook
 from .global_trend import check_global_trend
 from .liquidity import (
+    DISPLACEMENT_ATR_MULT, SWEEP_LOOKBACK,
     detect_sweep, find_displacement_in_range, find_entry_fvg, get_previous_day_range,
 )
 from .liquidity_walls import nearest_protective_wall
@@ -325,23 +326,35 @@ def _try_sweep_setup(
     # entry this list happens to start with: on any bar where both a swept
     # low and a swept high qualify, bullish would always win purely because
     # it is listed first.
-    qualifying = []
+    # Rejections are recorded per direction and per condition. A single
+    # combined "needs sweep + displacement + 4H" message can't distinguish
+    # "no sweep happened" from "swept but nobody committed" from "4H
+    # blocked it" — three different situations calling for three different
+    # responses, and guessing between them is how tuning turns into
+    # superstition.
+    qualifying, why_not = [], []
     for bias, level, level_name in candidates:
         if bias_4h != "ranging" and bias_4h != bias:
-            continue  # 4H actively opposes this direction
+            why_not.append(f"{bias}: 4H is {bias_4h}")
+            continue
 
         sweep = detect_sweep(df_15m, level, bias, level_name)
         if sweep is None:
+            why_not.append(f"{bias}: {level_name} not swept+reclaimed within {SWEEP_LOOKBACK} bars")
             continue
 
         disp_i = find_displacement_in_range(df_15m, sweep.index, bias, atr_15m)
         if disp_i is None:
-            continue  # level was reclaimed but nobody committed to the move
+            why_not.append(
+                f"{bias}: {level_name} swept {sweep.candles_ago}c ago but no displacement "
+                f"(need body >= {DISPLACEMENT_ATR_MULT}x ATR)"
+            )
+            continue
 
         qualifying.append((sweep, disp_i, bias, level))
 
     if not qualifying:
-        return None, "No sweep setup (needs reclaimed daily level + displacement, 4H not opposing)"
+        return None, "; ".join(why_not) or "no daily levels to test"
 
     # Freshest sweep wins — the most recent rejection is the one still being
     # traded, and it's a property of the market rather than of list order.
