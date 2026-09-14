@@ -102,7 +102,12 @@ echo "🔎 Tikrinami importai..."
 if [ ! -x "$VENV_PY" ]; then
     echo "⚠️  .venv nerastas — praleidžiu importo patikrą (bus sukurtas paleidžiant run_main.sh)."
 else
-    if "$VENV_PY" -c "
+    # Run from $DIR, not from wherever the caller happened to be. `python -c`
+    # puts the CURRENT directory on sys.path, not the script's, so
+    # `bash ~/trading-bot/update.sh` launched from any other directory failed
+    # the check with "No module named 'analysis'" and refused to restart a
+    # bot whose files were in fact fine.
+    if (cd "$DIR" && "$VENV_PY" -c "
 import analysis.market_data, analysis.smc, analysis.ross_hook
 import analysis.multi_timeframe, analysis.global_trend, analysis.liquidity
 import analysis.trade_logger, analysis.hyperliquid_account, analysis.liquidity_walls
@@ -110,7 +115,7 @@ import analysis.pair_selection, analysis.ict, analysis.ict_stats, analysis.marke
 import ai.claude_analyst, notifications.telegram_bot, notifications.bot_commands
 import risk.position_sizer
 print('✅ visi moduliai importuojasi')
-"; then
+"); then
         :
     else
         echo "❌ IMPORTO KLAIDA — BOTAS NEPERKRAUNAMAS, kad neliktų sustabdytas. Parodyk šią klaidą, kad pataisytume."
