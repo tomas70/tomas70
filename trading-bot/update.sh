@@ -37,7 +37,7 @@ fi
 
 echo "⬇️  Atnaujinami failai į $DIR ..."
 
-mkdir -p "$DIR/analysis" "$DIR/ai" "$DIR/notifications" "$DIR/risk" "$DIR/logs"
+mkdir -p "$DIR/analysis" "$DIR/ai" "$DIR/notifications" "$DIR/risk" "$DIR/logs" "$DIR/tests"
 
 FILES=(
     main.py
@@ -56,6 +56,9 @@ FILES=(
     analysis/multi_timeframe.py
     analysis/global_trend.py
     analysis/liquidity.py
+    analysis/ict.py
+    analysis/ict_stats.py
+    analysis/market_context.py
     analysis/trade_logger.py
     analysis/hyperliquid_account.py
     analysis/liquidity_walls.py
@@ -67,6 +70,8 @@ FILES=(
     notifications/bot_commands.py
     risk/__init__.py
     risk/position_sizer.py
+    tests/test_ict.py
+    tests/test_ict_stats.py
 )
 
 FAILED=0
@@ -101,7 +106,7 @@ else
 import analysis.market_data, analysis.smc, analysis.ross_hook
 import analysis.multi_timeframe, analysis.global_trend, analysis.liquidity
 import analysis.trade_logger, analysis.hyperliquid_account, analysis.liquidity_walls
-import analysis.pair_selection
+import analysis.pair_selection, analysis.ict, analysis.ict_stats, analysis.market_context
 import ai.claude_analyst, notifications.telegram_bot, notifications.bot_commands
 import risk.position_sizer
 print('✅ visi moduliai importuojasi')
