@@ -29,6 +29,7 @@ import time
 
 from analysis.multi_timeframe import get_full_analysis
 from analysis.trade_logger import get_stats, log_setup, update_all_pending_outcomes
+from analysis.ict_stats import format_ict_stats
 from analysis.hyperliquid_account import (
     AccountNotConfigured, get_account_balance, get_recent_fills, summarize_trades,
 )
@@ -180,6 +181,7 @@ def handle_command(command: str, args: list[str]) -> str:
             "/scan — skenuoti rinkas dabar\n"
             "/status — balansas, lygis ir sandorių statistika (iš Hyperliquid)\n"
             "/log — bot'o alertų statistika (skirtinga nuo /status — žr. žemiau)\n"
+            "/ict — MSS / Fibo OTE / sesijos / funding pjūviai\n"
             "/help — ši pagalba\n\n"
             "<i>Balansas ir sandoriai imami tiesiogiai iš Hyperliquid — nieko "
             "įvesti rankiniu būdu nereikia.</i>"
@@ -243,6 +245,13 @@ def handle_command(command: str, args: list[str]) -> str:
             lines.append(f"  Su OB:  {fmt(by_ob['with_ob'])}")
             lines.append(f"  Be OB:  {fmt(by_ob['without_ob'])}")
         return "\n".join(lines)
+
+    if command == "/ict":
+        # Same scope convention as /log: epoch-filtered by default, full
+        # history with `/ict all`. These slices are observational — nothing
+        # in the scanner gates on them, so a green row here is a reason to
+        # keep measuring, not a reason to change the rules yet.
+        return format_ict_stats(all_time=bool(args) and args[0].lower() == "all")
 
     if command == "/status":
         try:
