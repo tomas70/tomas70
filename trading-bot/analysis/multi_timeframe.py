@@ -83,6 +83,8 @@ from .liquidity import (
     detect_sweep, find_displacement_in_range, find_entry_fvg, get_previous_day_range,
 )
 from .liquidity_walls import nearest_protective_wall
+from .ict import describe_ict_context
+from .market_context import get_market_context
 from config import HOOK_SETUP_ENABLED, MIN_RR_RATIO, TP1_FIXED_PCT
 
 logger = logging.getLogger(__name__)
@@ -396,6 +398,11 @@ def _try_sweep_setup(
             "level":       sweep.level,
             "level_name":  sweep.level_name,
             "candles_ago": sweep.candles_ago,
+            # The sweeping candle itself. MSS and the OTE leg are both
+            # measured from here, so it has to travel with the setup —
+            # candles_ago alone would break the moment a later scan
+            # re-derives it against a shifted DataFrame.
+            "index":       sweep.index,
             "displacement_index": disp_i,
             "has_fvg":     entry_fvg is not None,
         },
@@ -521,6 +528,19 @@ def get_full_analysis(pair: str) -> dict:
     # change SWEEP mid-measurement and destroy the only clean signal we have.
     wall = nearest_protective_wall(pair, entry, bias)
 
+    # ── ICT confluence + perp context (recorded, NOT gated) ───────────────────
+    # MSS, OTE position and session for the SWEEP path; funding/OI for any
+    # setup. Deliberately observational for the same reason as the wall
+    # above: gating on them now would change what SWEEP fires on in the
+    # middle of a measurement window, and there is no logged data yet
+    # saying any of them separates winners from losers. The columns come
+    # first, the gates come only if the columns earn them.
+    ict = (
+        describe_ict_context(df_15m, setup["sweep"]["index"], bias, entry)
+        if entry_type == "SWEEP" and setup["sweep"] else None
+    )
+    perp = get_market_context(pair, bias)
+
     logger.info(
         "Valid setup: %s %s [%s] | entry=%.5f SL=%.5f TP1=%.5f RR=%.2f | 1D=%s BTC=%s",
         pair, bias.upper(), entry_type,
@@ -547,6 +567,8 @@ def get_full_analysis(pair: str) -> dict:
         "global_trend":  global_trend,
         "sweep":         setup["sweep"],
         "atr_15m_pct":   atr_pct,
+        "ict":           ict,
+        "perp_context":  perp,
         "liquidity_wall": (
             {
                 "price":          wall.price,

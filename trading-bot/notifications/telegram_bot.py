@@ -46,6 +46,8 @@ def format_setup_message(
     gt        = setup.get("global_trend") or {}
     sweep     = setup.get("sweep") or {}
     struct    = setup.get("structure_4h") or {}
+    ict       = setup.get("ict") or {}
+    perp      = setup.get("perp_context") or {}
     risk_usd  = setup.get("risk_usd", 0)
     pos_usd   = setup.get("position_usd", 0)
     leverage  = setup.get("leverage", 1)
@@ -78,12 +80,39 @@ def format_setup_message(
     # The two setups are read differently, so show what actually triggered
     if entry_type == "SWEEP":
         level_pretty = sweep.get("level_name", "?").replace("_", " ")
+
+        # ICT confluence lines. Shown as measured facts, not as ticks that
+        # imply the setup was validated by them — nothing here gates the
+        # alert, and presenting an unproven factor as a checkmark is how a
+        # recorded observation quietly turns into a belief.
+        mss = ict.get("mss")
+        ote = ict.get("ote") or {}
+        mss_line = (
+            f"prieš {mss['candles_ago']} žv. (${mss['level']:,.4f})" if mss
+            else "nėra (tik displacement)"
+        )
+        if ote:
+            ote_line = (
+                f"{ote['retracement']:.2f} "
+                f"{'✓ OTE 0.62-0.79' if ote.get('in_ote') else '✗ už OTE'} "
+                f"| 0.71 = ${ote['ote_price']:,.4f}"
+            )
+        else:
+            ote_line = "n/a"
+        kz = ict.get("killzone")
+        ses_line = f"{ict.get('session', '?')}{f' ({kz})' if kz else ''}"
+
         setup_block = (
             f"🧹 <b>LIQUIDITY SWEEP:</b>\n"
             f"  Lygis:     {level_pretty} (${sweep.get('level', 0):,.4f})\n"
             f"  Nušluota:  prieš {sweep.get('candles_ago', '?')} žvakių\n"
             f"  Displacement ✓  |  FVG: {'✓' if sweep.get('has_fvg') else 'nėra (įėjimas prie lygio)'}\n"
             f"  OB zona:   {ob_range}\n"
+            f"\n"
+            f"🔬 <b>ICT (tik stebima, negatuoja):</b>\n"
+            f"  MSS:       {mss_line}\n"
+            f"  Fibo:      {ote_line}\n"
+            f"  Sesija:    {ses_line}\n"
         )
     else:
         setup_block = (
@@ -104,6 +133,19 @@ def format_setup_message(
     else:
         tp1_quality = f"✓ šviežias 4H lygis (prieš {tp1_age} žvakių)"
 
+    # Funding over the 48h outcome window, in the same percent units as
+    # TP1 — an extreme rate is a visible fraction of a 2% target, and
+    # against the trade it is simply a worse trade than the R:R claims.
+    carry = perp.get("funding_carry_pct_48h")
+    if carry is None:
+        funding_line = ""
+    else:
+        verdict = "gauni" if carry > 0 else "moki"
+        funding_line = (
+            f"  Funding:  {carry:+.3f}% / 48h ({verdict})  "
+            f"| APR {perp.get('funding_apr_pct', 0):+.1f}%\n"
+        )
+
     now = datetime.now(ZoneInfo(TIMEZONE)).strftime("%Y-%m-%d %H:%M %Z")
 
     return (
@@ -118,6 +160,7 @@ def format_setup_message(
         f"  TP1:    <code>${tp1:,.4f}</code>  ({tp1_sign}{tp1_pct:.2f}%)  {tp1_quality}\n"
         f"  TP2:    <code>${tp2:,.4f}</code>\n"
         f"  R:R  =  1:{rr:.1f}\n"
+        f"{funding_line}"
         f"\n"
         f"💼 <b>RIZIKA</b> (Level {level_num} | ${balance}):\n"
         f"  Rizika:    ${risk_usd:.2f} (30%)\n"

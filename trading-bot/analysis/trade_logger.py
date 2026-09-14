@@ -37,6 +37,19 @@ COLUMNS = [
     # order-book wall have survived where the SL actually used did not?
     "wall_price", "wall_dist_pct", "wall_size_vs_median",
     "atr_15m_pct",
+    # ICT confluence, recorded to answer three questions the current rules
+    # assume rather than test: does a real structure shift beat a bare
+    # displacement candle, does an entry landing in the 0.62-0.79 OTE band
+    # resolve better than one landing shallow or deep, and do killzone
+    # sweeps differ from off-hours ones. Blank (not False) on the HOOK
+    # path, where none of them are defined.
+    "mss_confirmed", "mss_candles_ago",
+    "ote_retracement", "in_ote", "ote_leg_pct",
+    "session", "killzone",
+    # Perp-only context. funding_carry_pct_48h is signed for the trade and
+    # in the same units as tp1_pct/sl_pct, so it can be compared directly
+    # against the 2% target rather than admired in isolation.
+    "funding_hourly", "funding_carry_pct_48h", "oi_usd",
     "status", "outcome_at", "outcome_candles",
 ]
 
@@ -111,6 +124,13 @@ def log_setup(result: dict) -> None:
     gt    = result.get("global_trend") or {}
     sweep = result.get("sweep") or {}
     wall  = result.get("liquidity_wall") or {}
+    # ict is None on the HOOK path (MSS/OTE/session are SWEEP concepts).
+    # Blank in that case, so "not applicable" never reads as "measured and
+    # absent" when these columns are grouped later.
+    ict   = result.get("ict")
+    mss   = (ict or {}).get("mss") or {}
+    ote   = (ict or {}).get("ote") or {}
+    perp  = result.get("perp_context") or {}
     row = {
         "id":               str(uuid.uuid4())[:8],
         "logged_at":        datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -137,6 +157,16 @@ def log_setup(result: dict) -> None:
         "wall_dist_pct":        wall.get("distance_pct", ""),
         "wall_size_vs_median":  wall.get("size_vs_median", ""),
         "atr_15m_pct":          result.get("atr_15m_pct", ""),
+        "mss_confirmed":        bool(mss) if ict else "",
+        "mss_candles_ago":      mss.get("candles_ago", ""),
+        "ote_retracement":      ote.get("retracement", ""),
+        "in_ote":               ote.get("in_ote", "") if ict else "",
+        "ote_leg_pct":          ote.get("leg_pct", ""),
+        "session":              (ict or {}).get("session", ""),
+        "killzone":             (ict or {}).get("killzone", "") or "",
+        "funding_hourly":        perp.get("funding_hourly", ""),
+        "funding_carry_pct_48h": perp.get("funding_carry_pct_48h", ""),
+        "oi_usd":                perp.get("oi_usd", ""),
         "status":           "pending",
         "outcome_at":       "",
         "outcome_candles":  "",
