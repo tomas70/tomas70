@@ -24,6 +24,11 @@ RETRY_BASE_DELAY = 1.0  # seconds; doubles each attempt (1s, 2s, 4s)
 # In-memory cache: {(pair, timeframe): (DataFrame, monotonic_timestamp)}
 _cache: dict[tuple[str, str], tuple[pd.DataFrame, float]] = {}
 
+# ticker -> Evedex instrument name, e.g. "BONK" -> "1000BONKUSD". Cached
+# separately from the candle cache since it almost never changes.
+INSTRUMENT_MAP_TTL_SECONDS = 60 * 60
+_instrument_map_cache: Optional[tuple[dict[str, str], float]] = None
+
 # Evedex candlestick "group" values — TIMEFRAMES/GLOBAL_TREND_TIMEFRAME in
 # config.py must only ever use values from this set.
 _GROUP_MS: dict[str, int] = {
@@ -42,9 +47,60 @@ _GROUP_MS: dict[str, int] = {
 }
 
 
+def _instrument_map() -> dict[str, str]:
+    """
+    ticker -> Evedex instrument name, built from the live instrument list
+    rather than assumed as f"{ticker}USD".
+
+    That assumption holds for most coins (BTC -> BTCUSD) but not all: Evedex
+    prefixes some low-price tokens with a contract multiplier baked into the
+    instrument name itself — 1000BONKUSD, 1000PEPEUSD, 1000000BABYDOGEUSD —
+    and names the pump.fun perp PUMPFUNUSD rather than PUMPUSD, even though
+    `from.symbol` (what pair_selection uses as the bot-internal ticker) is
+    the bare "BONK"/"PEPE"/"PUMP". A scan that assumed the naive mapping
+    fetched candles for a nonexistent instrument and returned nothing for
+    exactly these coins.
+
+    Skips non-tradable duplicates the same way pair_selection/market_context
+    do (Evedex's ":RISK" twin per instrument), so a real BTCUSD row never
+    loses to a zeroed-out BTCUSD:RISK row on ticker collision.
+    """
+    global _instrument_map_cache
+    now = time.monotonic()
+
+    if _instrument_map_cache is not None and now - _instrument_map_cache[1] < INSTRUMENT_MAP_TTL_SECONDS:
+        return _instrument_map_cache[0]
+
+    try:
+        instruments = get_instruments()
+    except Exception as exc:
+        logger.warning("Instrument list fetch failed (%s) — keeping stale map if any", exc)
+        return _instrument_map_cache[0] if _instrument_map_cache is not None else {}
+
+    mapping: dict[str, str] = {}
+    for inst in instruments:
+        if not isinstance(inst, dict) or inst.get("type") != "perpetual-futures":
+            continue
+        if inst.get("trading") in ("none", "restricted"):
+            continue
+        ticker = (inst.get("from") or {}).get("symbol")
+        name   = inst.get("name")
+        if ticker and name:
+            mapping[ticker] = name
+
+    _instrument_map_cache = (mapping, now)
+    return mapping
+
+
 def to_instrument(pair: str) -> str:
-    """Bot-internal ticker ("BTC") -> Evedex instrument name ("BTCUSD")."""
-    return f"{pair}USD"
+    """
+    Bot-internal ticker ("BTC") -> Evedex instrument name ("BTCUSD"), via the
+    live instrument map. Falls back to the naive f"{pair}USD" guess only when
+    the map is unavailable or doesn't know this ticker (e.g. it's already an
+    instrument name, or a genuinely unknown symbol) — callers already handle
+    that coming back as empty data.
+    """
+    return _instrument_map().get(pair) or f"{pair}USD"
 
 
 def _is_retryable(exc: Exception) -> bool:
