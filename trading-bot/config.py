@@ -43,9 +43,15 @@ STRATEGY_EPOCH: str = "2026-09-12T19:04:09+00:00"
 # Scan every perp that is actually liquid right now instead of a fixed list.
 # A pair qualifies on EITHER metric: a market can be worth trading on strong
 # turnover with modest positioning open, or the reverse.
+#
+# Thresholds are 0 (i.e. no filter) rather than a Hyperliquid-sized number:
+# Evedex lists only 39 tradable crypto perps total (confirmed live), so a
+# 50M-style cutoff built for a market with hundreds of perps would leave 3-4
+# pairs standing instead of thinning an already-small set. All 39 fit well
+# under MAX_ACTIVE_PAIRS below, so there's nothing to filter for yet.
 USE_DYNAMIC_PAIRS: bool = True
-MIN_DAY_VOLUME_USD: float    = 50_000_000   # 24h notional volume
-MIN_OPEN_INTEREST_USD: float = 50_000_000   # open interest, converted to USD
+MIN_DAY_VOLUME_USD: float    = 0   # 24h notional volume
+MIN_OPEN_INTEREST_USD: float = 0   # open interest, converted to USD
 
 # Hard cap on how many pairs a scan covers. Each pair costs 3 candle requests
 # every 15 minutes (15m/1h/4h), so this bounds both scan duration and the
