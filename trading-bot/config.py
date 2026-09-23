@@ -10,10 +10,11 @@ TELEGRAM_CHAT_ID:   str = os.getenv("TELEGRAM_CHAT_ID",   "")
 # Anthropic API key: only needed for standalone mode (without Claude Desktop)
 ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
 
-# Public Hyperliquid wallet address (0x...) — NOT a private key. Used to read
-# live account balance and executed trade history via the public info API.
-# Required for balance/status to work; the bot never signs or trades.
-HYPERLIQUID_ADDRESS: str = os.getenv("HYPERLIQUID_ADDRESS", "")
+# Evedex API key (read-only account access — created under Settings -> API
+# on the Evedex exchange). Sent as the x-api-key header on every private
+# request. Required for balance/status to work; the bot never signs or
+# places orders, so a read-only key is enough.
+EVEDEX_API_KEY: str = os.getenv("EVEDEX_API_KEY", "")
 
 # Ross Hook continuation setup. Disabled after it underperformed a coin flip
 # in every window measured: -7.2pp edge over 92 pre-epoch trades, then
@@ -48,26 +49,24 @@ MIN_OPEN_INTEREST_USD: float = 50_000_000   # open interest, converted to USD
 
 # Hard cap on how many pairs a scan covers. Each pair costs 3 candle requests
 # every 15 minutes (15m/1h/4h), so this bounds both scan duration and the
-# request rate against Hyperliquid — without it, a bull market that lifts 150
+# request rate against Evedex — without it, a bull market that lifts 150
 # perps over the threshold would quietly turn one scan into 450 requests.
 MAX_ACTIVE_PAIRS: int = 60
 
 # Fallback list, used when USE_DYNAMIC_PAIRS is False or exchange metadata
 # can't be read. Kept as the known-good core rather than deleted.
-# Trading pairs — Hyperliquid perpetual futures (coin symbol only)
-# Selected for: high Hyperliquid volume + TradFi presence (CME/ETF/institutional)
+# Trading pairs — Evedex perpetual futures (coin symbol only; market_data
+# appends "USD" to get the instrument name, e.g. "BTC" -> "BTCUSD")
+# Selected for: high volume + TradFi presence (CME/ETF/institutional).
+# ADA and UNI dropped — not listed as Evedex instruments.
 PAIRS: list[str] = [
     # Tier 1 — CME futures + ETF (IBIT, FBTC, ETHA...)
     "BTC", "ETH", "SOL", "BNB", "XRP",
     # Tier 2 — institutional + regulated, high open interest
-    "DOGE", "AVAX", "LINK", "ADA", "DOT",
+    "DOGE", "AVAX", "LINK", "DOT",
     "LTC", "BCH", "ATOM", "NEAR", "SUI",
     # Tier 3 — major DeFi + L2 + ecosystem
-    # TON renamed to GRAM (ticker + symbol) on 2026-06-15 after an 81.22%
-    # community vote; Hyperliquid delisted the old TON perp around the same
-    # time and lists the renamed asset as GRAM — same network/holdings, new
-    # symbol only, no token swap.
-    "APT", "ARB", "OP", "GRAM", "UNI",
+    "APT", "ARB", "OP", "GRAM",
 ]
 
 # Timeframes fetched for every pair on every scan

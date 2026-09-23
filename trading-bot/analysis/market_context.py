@@ -2,14 +2,18 @@
 Perp-specific context for a pair: funding rate, open interest, premium.
 
 These have no equivalent in the chart-pattern model the bot implements,
-and they are the part of Hyperliquid that a spot-derived setup framework
-is blind to:
+and they are the part of Evedex that a spot-derived setup framework is
+blind to:
 
   funding    A perp position is paid or charged every hour. A short into
              positive funding is paid to hold; a long into positive
              funding bleeds. Over a 48h outcome window at an extreme rate
              this is a real fraction of the 2% TP1 target, so it belongs
              in the record even before anyone decides to gate on it.
+             Evedex computes the rate once per 8h (the `fundingRate`
+             field below) but settles it hourly at 1/8th per hour, so the
+             hourly-equivalent used throughout this module is that field
+             divided by 8.
 
   open       OI rising while price sweeps a level means new positions were
   interest   opened into the move; OI falling means positions were closed
@@ -18,11 +22,16 @@ is blind to:
              across the sweep needs a history this endpoint doesn't give,
              and is the obvious next step once these rows exist.
 
-  premium    Mark vs oracle. A large premium is crowding in one direction.
+  premium    Mark vs index. A large premium is crowding in one direction.
+             Evedex's instrument metrics don't carry an index price
+             directly; from.avgLastPrice is what the docs point to for
+             index calculation, so premium is derived as
+             (markPrice - avgLastPrice) / avgLastPrice here.
 
-Source is metaAndAssetCtxs, the same endpoint pair_selection already
-calls, so this adds one cached request per scan rather than one per pair.
-Cached for 10 minutes: funding updates hourly, and a scan runs every 15.
+Source is the instrument metrics endpoint, the same one pair_selection
+already calls, so this adds one cached request per scan rather than one
+per pair. Cached for 10 minutes: funding updates hourly, and a scan runs
+every 15.
 
 Values are recorded, never gated on. Same reasoning as analysis/ict.py.
 """
@@ -30,7 +39,7 @@ import logging
 import time
 from typing import Optional
 
-from .market_data import post_info
+from .market_data import get_instruments
 
 logger = logging.getLogger(__name__)
 
@@ -45,39 +54,41 @@ def _fetch_all() -> dict[str, dict]:
     Per-coin funding / OI / premium for every listed perp.
 
     openInterest is denominated in COINS (the same trap pair_selection
-    documents), so it is multiplied by markPx here — an OI figure that is
-    silently in coins for BTC and in coins for a $0.10 alt is not
+    documents), so it is multiplied by markPrice here — an OI figure that
+    is silently in coins for BTC and in coins for a $0.10 alt is not
     comparable across pairs and would make any later threshold nonsense.
+
+    Evedex lists a second ":RISK" instrument per coin (e.g. "BTCUSD:RISK"
+    alongside "BTCUSD") that shares the same underlying symbol but trades
+    "none" and carries all-zero metrics. Skipping non-tradable instruments
+    here isn't just hygiene — without it the zero-filled RISK row can
+    overwrite the real one in `out`, since both map to the same ticker key.
     """
-    data = post_info({"type": "metaAndAssetCtxs"})
-
-    if not isinstance(data, list) or len(data) < 2:
-        raise ValueError(f"unexpected metaAndAssetCtxs shape: {str(data)[:200]}")
-
-    meta, ctxs = data[0], data[1]
-    universe = meta.get("universe") if isinstance(meta, dict) else None
-    if not isinstance(universe, list) or not isinstance(ctxs, list):
-        raise ValueError("metaAndAssetCtxs missing 'universe' or context array")
+    instruments = get_instruments(with_metrics=True)
+    if not isinstance(instruments, list):
+        raise ValueError(f"unexpected instrument list shape: {str(instruments)[:200]}")
 
     out: dict[str, dict] = {}
-    for asset, ctx in zip(universe, ctxs):
-        if not isinstance(asset, dict) or not isinstance(ctx, dict):
+    for inst in instruments:
+        if not isinstance(inst, dict) or inst.get("type") != "perpetual-futures":
             continue
-        name = asset.get("name")
-        if not name:
+        if inst.get("trading") in ("none", "restricted"):
+            continue
+        ticker = (inst.get("from") or {}).get("symbol")
+        if not ticker:
             continue
         try:
-            mark     = float(ctx.get("markPx") or 0)
-            funding  = float(ctx.get("funding") or 0)      # hourly, as a fraction
-            oi_coins = float(ctx.get("openInterest") or 0)
-            premium  = float(ctx.get("premium") or 0)
+            mark        = float(inst.get("markPrice") or 0)
+            index       = float((inst.get("from") or {}).get("avgLastPrice") or 0)
+            funding_8h  = float(inst.get("fundingRate") or 0)
+            oi_coins    = float(inst.get("openInterest") or 0)
         except (TypeError, ValueError):
             continue
 
-        out[name] = {
-            "funding_hourly": funding,
+        out[ticker] = {
+            "funding_hourly": funding_8h / 8,   # Evedex sets FR once per 8h, settles 1/8th hourly
             "oi_usd":         oi_coins * mark,
-            "premium":        premium,
+            "premium":        (mark - index) / index if index else 0.0,
             "mark":           mark,
         }
 

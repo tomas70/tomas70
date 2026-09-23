@@ -149,7 +149,7 @@ def format_setup_message(
     now = datetime.now(ZoneInfo(TIMEZONE)).strftime("%Y-%m-%d %H:%M %Z")
 
     return (
-        f"🎯 <b>TRADING SETUP — {pair}/USDC  (Hyperliquid)</b>\n"
+        f"🎯 <b>TRADING SETUP — {pair}/USD  (Evedex)</b>\n"
         f"\n"
         f"📊 <b>BIAS:</b> {bias} {bias_arrow}  |  {entry_label}\n"
         f"⏱ 15m Hook | 4H struktūra | 1H SMC OB | 1D trendas\n"

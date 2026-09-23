@@ -1,7 +1,7 @@
 """
 Deterministic tests for analysis/ict.py and the funding sign convention.
 
-Synthetic candles, no network: the Hyperliquid endpoints are unreachable
+Synthetic candles, no network: the Evedex endpoints are unreachable
 from some environments, and these are checks of the arithmetic and the
 structure rules, which do not need live data to be wrong.
 
