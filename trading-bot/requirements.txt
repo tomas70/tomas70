@@ -4,7 +4,7 @@ numpy>=1.26.0
 ta>=0.11.0
 python-dotenv>=1.0.0
 
-# HTTP — Hyperliquid public API (market data + account balance/fills) + Telegram
+# HTTP — Evedex public API (market data + account balance/positions) + Telegram
 httpx>=0.27.0
 
 # MCP server for Claude Desktop integration

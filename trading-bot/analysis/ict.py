@@ -28,7 +28,7 @@ Why each one is worth measuring:
   Session  A 24h market still has concentrated participation windows. The
         sweeps this model is built on are, in theory, manufactured around
         the London and New York opens. Timestamped sessions say whether
-        that holds on Hyperliquid or is inherited folklore from FX.
+        that holds on Evedex or is inherited folklore from FX.
 
 All times are computed in UTC. Vilnius (EEST, UTC+3) equivalents are in
 the comments for reading alerts, not used in logic — a fixed offset would

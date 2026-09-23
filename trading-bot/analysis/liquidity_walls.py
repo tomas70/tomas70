@@ -11,11 +11,11 @@ sample we measured, and an OB is exactly that kind of historical
 inference.
 
 Snapshot over stream: the bot scans every 15 minutes, so it needs the book
-at decision time, not continuously. Hyperliquid's info endpoint serves the
-same data as the l2Book websocket subscription as a plain POST, which
-avoids a background thread, reconnect handling, and shared mutable state
-for 20 pairs. (A websocket feed is the right tool for a human watching one
-pair live — it is the wrong one for a 15-minute cron.)
+at decision time, not continuously. Evedex's GET .../deep endpoint serves
+the same data as the {env}:orderBook websocket channel as a plain REST
+call, which avoids a background thread, reconnect handling, and shared
+mutable state for 20 pairs. (A websocket feed is the right tool for a
+human watching one pair live — it is the wrong one for a 15-minute cron.)
 
 Wall threshold is RELATIVE, not a hardcoded size per coin: a level counts
 as a wall when its size is WALL_SIZE_MULT times the median level size in
@@ -23,10 +23,15 @@ that same book. A fixed "3 BTC / 30 ETH / 500 SOL" table cannot generalise
 across 20 pairs and silently goes stale as price and volatility move; a
 multiple of the book's own median re-calibrates itself on every request.
 
-KNOWN LIMIT: the endpoint returns at most 20 levels per side, so this sees
-only a narrow band around mid price. A wall sitting further out — often
-exactly where a protective stop belongs — is invisible here. Treat a
-missing wall as "none visible nearby", never as "none exists".
+KNOWN LIMIT: Evedex doesn't document a level cap the way Hyperliquid did
+(a live BTCUSD snapshot returned 82 asks / 100 bids), but the book is
+still a snapshot of what's resting right now — a wall can still sit
+outside whatever range the book happens to return. Treat a missing wall
+as "none visible nearby", never as "none exists".
+
+Evedex order book levels don't carry a resting-order count (Hyperliquid's
+"n" did) — Wall.orders is always 0 here, kept in the dataclass only so
+callers don't need a second shape for this field.
 
 Usage as a standalone check (non-interactive, one pair per call):
     .venv/bin/python -m analysis.liquidity_walls BTC
@@ -36,7 +41,7 @@ from dataclasses import dataclass
 from statistics import median
 from typing import Literal, Optional
 
-from .market_data import post_info
+from .market_data import get_order_book
 
 logger = logging.getLogger(__name__)
 
@@ -75,35 +80,34 @@ def get_orderbook(coin: str) -> tuple[list[dict], list[dict]]:
     or a silently empty wall list.
     """
     try:
-        data = post_info({"type": "l2Book", "coin": coin})
+        data = get_order_book(coin)
     except Exception as exc:
-        raise OrderBookUnavailable(f"{coin}: l2Book request failed — {exc}") from exc
+        raise OrderBookUnavailable(f"{coin}: order book request failed — {exc}") from exc
 
-    levels = data.get("levels") if isinstance(data, dict) else None
-    if not isinstance(levels, list) or len(levels) < 2:
+    bids_raw = data.get("bids") if isinstance(data, dict) else None
+    asks_raw = data.get("asks") if isinstance(data, dict) else None
+    if not isinstance(bids_raw, list) or not isinstance(asks_raw, list):
         raise OrderBookUnavailable(
-            f"{coin}: unexpected l2Book response shape — expected a dict with a "
-            f"2-element 'levels' list, got: {str(data)[:200]}"
+            f"{coin}: unexpected order book response shape — expected a dict with "
+            f"'bids'/'asks' lists, got: {str(data)[:200]}"
         )
 
-    def parse(side_levels: object, label: str) -> list[dict]:
-        if not isinstance(side_levels, list):
-            raise OrderBookUnavailable(f"{coin}: l2Book '{label}' side is not a list")
+    def parse(side_levels: list, label: str) -> list[dict]:
         out = []
         for lvl in side_levels:
             try:
                 out.append({
-                    "px": float(lvl["px"]),
-                    "sz": float(lvl["sz"]),
-                    "n":  int(lvl.get("n", 0)),
+                    "px": float(lvl["price"]),
+                    "sz": float(lvl["quantity"]),
+                    "n":  0,   # Evedex doesn't report a resting-order count per level
                 })
             except (KeyError, TypeError, ValueError) as exc:
                 raise OrderBookUnavailable(
-                    f"{coin}: malformed l2Book level in '{label}': {lvl!r} ({exc})"
+                    f"{coin}: malformed order book level in '{label}': {lvl!r} ({exc})"
                 ) from exc
         return out
 
-    return parse(levels[0], "bids"), parse(levels[1], "asks")
+    return parse(bids_raw, "bids"), parse(asks_raw, "asks")
 
 
 # ─── Wall detection ───────────────────────────────────────────────────────────
@@ -218,7 +222,7 @@ if __name__ == "__main__":
     fmt = (lambda p: f"${p:,.4f}") if mid < 1 else (lambda p: f"${p:,.2f}")
 
     print("=" * 68)
-    print(f" HYPERLIQUID LIKVIDUMO SIENOS: {coin}")
+    print(f" EVEDEX LIKVIDUMO SIENOS: {coin}")
     print("=" * 68)
     print(f"Mid: {fmt(mid)} | Bid: {fmt(book['best_bid'])} | Ask: {fmt(book['best_ask'])}")
     print(f"Siena = lygis, kurio dydis >= {WALL_SIZE_MULT}x knygos medianos\n")
@@ -238,4 +242,4 @@ if __name__ == "__main__":
               f"(-{w.distance_pct:.2f}%) | {w.size_vs_median}x medianos | {w.orders} ord.")
 
     print("\n" + "=" * 68)
-    print("PASTABA: matomi tik ~20 lygių pusėje — tolimesnės sienos nematomos.")
+    print("PASTABA: matomas tik gautas knygos gylis — tolimesnės sienos gali būti nematomos.")

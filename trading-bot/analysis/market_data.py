@@ -1,5 +1,6 @@
 import time
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
@@ -9,10 +10,11 @@ from config import CANDLES_LIMIT, PAIRS, SUPPORTED_TIMEFRAMES, TIMEFRAMES
 
 logger = logging.getLogger(__name__)
 
-HL_BASE_URL       = "https://api.hyperliquid.xyz/info"
-CACHE_TTL_SECONDS = 60 * 14  # refresh if older than 14 minutes
+MARKET_DATA_BASE_URL = "https://market-data-api.evedex.com"
+EXCHANGE_BASE_URL     = "https://trading-api.evedex.com"
+CACHE_TTL_SECONDS     = 60 * 14  # refresh if older than 14 minutes
 
-# A full scan fires ~60 requests at Hyperliquid in a few seconds (20 pairs x
+# A full scan fires ~60 requests at Evedex in a few seconds (20 pairs x
 # 3 timeframes), which is enough to draw an occasional 429 or transient 5xx.
 # Those are retried with exponential backoff rather than surfacing as a
 # "Data fetch error" for the pair.
@@ -22,20 +24,27 @@ RETRY_BASE_DELAY = 1.0  # seconds; doubles each attempt (1s, 2s, 4s)
 # In-memory cache: {(pair, timeframe): (DataFrame, monotonic_timestamp)}
 _cache: dict[tuple[str, str], tuple[pd.DataFrame, float]] = {}
 
-# Hyperliquid interval → milliseconds
-_INTERVAL_MS: dict[str, int] = {
+# Evedex candlestick "group" values — TIMEFRAMES/GLOBAL_TREND_TIMEFRAME in
+# config.py must only ever use values from this set.
+_GROUP_MS: dict[str, int] = {
+    "1s":  1_000,
     "1m":  60_000,
     "3m":  3  * 60_000,
     "5m":  5  * 60_000,
     "15m": 15 * 60_000,
     "30m": 30 * 60_000,
     "1h":  60 * 60_000,
-    "2h":  2  * 60 * 60_000,
     "4h":  4  * 60 * 60_000,
-    "8h":  8  * 60 * 60_000,
+    "6h":  6  * 60 * 60_000,
     "12h": 12 * 60 * 60_000,
     "1d":  24 * 60 * 60_000,
+    "1w":  7  * 24 * 60 * 60_000,
 }
+
+
+def to_instrument(pair: str) -> str:
+    """Bot-internal ticker ("BTC") -> Evedex instrument name ("BTCUSD")."""
+    return f"{pair}USD"
 
 
 def _is_retryable(exc: Exception) -> bool:
@@ -45,14 +54,14 @@ def _is_retryable(exc: Exception) -> bool:
     return isinstance(exc, httpx.RequestError)  # timeouts, connection resets
 
 
-def _post_with_retry(payload: dict, timeout: int = 10) -> httpx.Response:
-    """POSTs to Hyperliquid, retrying transient errors with exponential backoff."""
+def _get_with_retry(url: str, params: Optional[dict] = None, timeout: int = 10) -> httpx.Response:
+    """GETs `url`, retrying transient errors with exponential backoff."""
     last_exc: Exception = RuntimeError("no attempt made")
 
     for attempt in range(MAX_RETRIES):
         try:
             with httpx.Client(timeout=timeout) as client:
-                response = client.post(HL_BASE_URL, json=payload)
+                response = client.get(url, params=params)
                 response.raise_for_status()
             return response
 
@@ -62,42 +71,57 @@ def _post_with_retry(payload: dict, timeout: int = 10) -> httpx.Response:
                 raise
             delay = RETRY_BASE_DELAY * (2 ** attempt)
             logger.warning(
-                "Hyperliquid request failed (%s), retry %d/%d in %.0fs",
-                exc, attempt + 1, MAX_RETRIES - 1, delay,
+                "Evedex request failed (%s %s), retry %d/%d in %.0fs",
+                url, exc, attempt + 1, MAX_RETRIES - 1, delay,
             )
             time.sleep(delay)
 
     raise last_exc
 
 
-def post_info(payload: dict, timeout: int = 10) -> dict:
+def get_instruments(with_metrics: bool = False) -> list[dict]:
     """
-    Public wrapper around the retrying POST: sends `payload` to Hyperliquid's
-    info endpoint and returns the parsed JSON.
-
-    Exists so every module reading Hyperliquid's public API shares one
-    definition of retry/backoff behaviour instead of each keeping its own copy.
+    Every instrument Evedex lists — public, no auth. Pass with_metrics=True
+    for the heavier response that also carries volume/openInterest/mark/
+    funding (per the docs, this variant "should not be used frequently").
     """
-    return _post_with_retry(payload, timeout).json()
+    params = {"fields": "metrics"} if with_metrics else None
+    response = _get_with_retry(f"{EXCHANGE_BASE_URL}/api/market/instrument", params=params)
+    return response.json()
 
 
-def _fetch_from_hyperliquid(pair: str, timeframe: str, limit: int) -> pd.DataFrame:
-    """Calls Hyperliquid public candleSnapshot endpoint — no API key required."""
-    end_ms   = int(time.time() * 1000)
-    interval_ms = _INTERVAL_MS.get(timeframe, 15 * 60_000)
-    start_ms = end_ms - limit * interval_ms
+def get_order_book(pair: str, max_level: Optional[int] = None) -> dict:
+    """
+    Raw order book depth for `pair` — public, no auth.
+    Returns {"t": ms_timestamp, "asks": [{"price","quantity"}], "bids": [...]}.
+    Pass max_level=1 for just the best bid/ask.
+    """
+    instrument = to_instrument(pair)
+    params = {"marketLevel": max_level} if max_level else None
+    response = _get_with_retry(f"{EXCHANGE_BASE_URL}/api/market/{instrument}/deep", params=params)
+    return response.json()
 
-    payload = {
-        "type": "candleSnapshot",
-        "req": {
-            "coin":      pair,
-            "interval":  timeframe,
-            "startTime": start_ms,
-            "endTime":   end_ms,
-        },
+
+def _fetch_from_evedex(pair: str, timeframe: str, limit: int) -> pd.DataFrame:
+    """
+    Calls Evedex's public candle history endpoint — no API key required.
+
+    Each candle is [timestamp_ms, open, close, max, min, volumeUsd, volume],
+    confirmed against a live response rather than assumed from the docs
+    prose (which doesn't name the array order).
+    """
+    end_ms      = int(time.time() * 1000)
+    interval_ms = _GROUP_MS.get(timeframe, 15 * 60_000)
+    start_ms    = end_ms - limit * interval_ms
+
+    instrument = to_instrument(pair)
+    params = {
+        "group":  timeframe,
+        "after":  datetime.fromtimestamp(start_ms / 1000, tz=timezone.utc).isoformat(),
+        "before": datetime.fromtimestamp(end_ms / 1000, tz=timezone.utc).isoformat(),
     }
 
-    response = _post_with_retry(payload)
+    response = _get_with_retry(f"{MARKET_DATA_BASE_URL}/api/history/{instrument}/list", params=params)
 
     candles = response.json()
     if not candles:
@@ -105,16 +129,17 @@ def _fetch_from_hyperliquid(pair: str, timeframe: str, limit: int) -> pd.DataFra
 
     df = pd.DataFrame([
         {
-            "timestamp": c["t"],
-            "open":      float(c["o"]),
-            "high":      float(c["h"]),
-            "low":       float(c["l"]),
-            "close":     float(c["c"]),
-            "volume":    float(c["v"]),
+            "timestamp": c[0],
+            "open":      float(c[1]),
+            "high":      float(c[3]),
+            "low":       float(c[4]),
+            "close":     float(c[2]),
+            "volume":    float(c[6]),
         }
         for c in candles
     ])
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
+    df.sort_values("timestamp", inplace=True)
     df.reset_index(drop=True, inplace=True)
     return df
 
@@ -128,7 +153,7 @@ def get_ohlcv(
     """
     Returns OHLCV DataFrame for the given pair and timeframe.
     Uses in-memory cache (14 min TTL); falls back to stale cache on network error.
-    No API key required — Hyperliquid public REST.
+    No API key required — Evedex Market Data is public REST.
     """
     # Format check only, not membership in the static PAIRS list: the active
     # pair set is now discovered from the exchange (see pair_selection), so a
@@ -150,13 +175,13 @@ def get_ohlcv(
             return cached_df.copy()
 
     try:
-        df = _fetch_from_hyperliquid(pair, timeframe, limit)
+        df = _fetch_from_evedex(pair, timeframe, limit)
         _cache[cache_key] = (df, now)
         logger.debug("Fetched %s %s (%d candles)", pair, timeframe, len(df))
         return df.copy()
 
     except Exception as exc:
-        logger.warning("Hyperliquid fetch failed for %s %s: %s", pair, timeframe, exc)
+        logger.warning("Evedex fetch failed for %s %s: %s", pair, timeframe, exc)
         if cache_key in _cache:
             logger.info("Returning stale cache for %s %s", pair, timeframe)
             return _cache[cache_key][0].copy()
@@ -164,12 +189,12 @@ def get_ohlcv(
 
 
 def get_current_price(pair: str) -> float:
-    """Fetches the latest mid price from Hyperliquid — no API key required."""
-    response = _post_with_retry({"type": "allMids"}, timeout=5)
-    mids = response.json()
-    if pair not in mids:
-        raise ValueError(f"Price not found for {pair} on Hyperliquid")
-    return float(mids[pair])
+    """Latest mid price (best bid/ask average) from the Evedex order book — no API key required."""
+    book = get_order_book(pair, max_level=1)
+    asks, bids = book.get("asks"), book.get("bids")
+    if not asks or not bids:
+        raise ValueError(f"Price not found for {pair} on Evedex")
+    return (float(asks[0]["price"]) + float(bids[0]["price"])) / 2
 
 
 def get_all_timeframes(pair: str) -> dict[str, pd.DataFrame]:

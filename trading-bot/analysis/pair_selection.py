@@ -2,24 +2,26 @@
 Which pairs to scan, chosen by live liquidity rather than a fixed list.
 
 A hardcoded pair list rots: it silently keeps scanning assets that were
-renamed or delisted (the TON->GRAM rename cost a pair for weeks, showing
-up only as "Empty candle data"), and it never picks up new listings that
-have since become liquid. Asking the exchange which perps are actually
-liquid right now fixes both directions at once.
+renamed or delisted, and it never picks up new listings that have since
+become liquid. Asking the exchange which perps are actually liquid right
+now fixes both directions at once.
 
-Liquidity is read from the metaAndAssetCtxs info endpoint, which returns
-`universe` (asset names) alongside a parallel array of per-asset context.
-Two fields matter, and they are NOT in the same units:
+Liquidity is read from GET /api/market/instrument?fields=metrics, which
+returns every instrument with a metrics block. Two fields matter, and they
+are NOT in the same units:
 
-    dayNtlVlm     24h notional volume, already USD
-    openInterest  open interest in COINS — must be multiplied by markPx
+    volumeBase    24h notional volume, already USD (misleadingly named —
+                  confirmed against a live BTCUSD response: ~$384M here
+                  lines up with `volume` x `markPrice`, not with `volume`
+                  alone)
+    openInterest  open interest in COINS — must be multiplied by markPrice
                   to become USD, or the filter is wrong by whatever the
                   coin price happens to be
 
-Perpetuals only. Hyperliquid also lists spot markets, but the bot's logic
-assumes perps throughout (shorting, funding, the bare `coin` symbol that
-candleSnapshot expects), and spot symbols use a different naming scheme —
-mixing them in would need a broader change than a threshold.
+Perpetuals only. Evedex also lists forex/indices/equities (EURUSD, DAX40USD,
+SPYUSD, TSLAUSD...), but the bot's logic assumes crypto perps throughout
+(shorting, funding, the bare ticker that market_data.to_instrument expects)
+— mixing them in would need a broader change than a threshold.
 
 Standalone check (prints what currently qualifies and why):
     .venv/bin/python -m analysis.pair_selection
@@ -28,7 +30,7 @@ import logging
 import time
 from typing import Optional
 
-from .market_data import post_info
+from .market_data import get_instruments
 from config import (
     MAX_ACTIVE_PAIRS, MIN_DAY_VOLUME_USD, MIN_OPEN_INTEREST_USD,
     PAIRS as STATIC_PAIRS, USE_DYNAMIC_PAIRS,
@@ -48,49 +50,47 @@ class PairLiquidityUnavailable(Exception):
 
 def fetch_pair_liquidity() -> list[dict]:
     """
-    Every listed perp with its USD volume and USD open interest.
+    Every listed crypto perp with its USD volume and USD open interest.
 
-    Returns [{"name", "volume_usd", "oi_usd", "mark"}], unsorted.
+    Returns [{"name", "volume_usd", "oi_usd", "mark"}], unsorted. `name` is
+    the bare ticker ("BTC"), not the Evedex instrument name ("BTCUSD").
     """
     try:
-        data = post_info({"type": "metaAndAssetCtxs"})
+        instruments = get_instruments(with_metrics=True)
     except Exception as exc:
-        raise PairLiquidityUnavailable(f"metaAndAssetCtxs request failed — {exc}") from exc
+        raise PairLiquidityUnavailable(f"instrument metrics request failed — {exc}") from exc
 
-    if not isinstance(data, list) or len(data) < 2:
+    if not isinstance(instruments, list):
         raise PairLiquidityUnavailable(
-            f"unexpected metaAndAssetCtxs shape — expected [meta, ctxs], got: {str(data)[:200]}"
+            f"unexpected instrument list shape — expected a list, got: {str(instruments)[:200]}"
         )
 
-    meta, ctxs = data[0], data[1]
-    universe = meta.get("universe") if isinstance(meta, dict) else None
-    if not isinstance(universe, list) or not isinstance(ctxs, list):
-        raise PairLiquidityUnavailable("metaAndAssetCtxs missing 'universe' or context array")
-
     rows: list[dict] = []
-    for asset, ctx in zip(universe, ctxs):
-        if not isinstance(asset, dict) or not isinstance(ctx, dict):
+    for inst in instruments:
+        if not isinstance(inst, dict) or inst.get("type") != "perpetual-futures":
             continue
-        name = asset.get("name")
-        if not name or asset.get("isDelisted"):
+        if inst.get("trading") in ("none", "restricted"):
+            continue
+        ticker = (inst.get("from") or {}).get("symbol")
+        if not ticker:
             continue
         try:
-            mark     = float(ctx.get("markPx") or 0)
-            volume   = float(ctx.get("dayNtlVlm") or 0)
-            oi_coins = float(ctx.get("openInterest") or 0)
+            mark     = float(inst.get("markPrice") or 0)
+            volume   = float(inst.get("volumeBase") or 0)     # already USD notional
+            oi_coins = float(inst.get("openInterest") or 0)
         except (TypeError, ValueError):
-            logger.debug("Skipping %s — unparseable context %r", name, ctx)
+            logger.debug("Skipping %s — unparseable instrument %r", ticker, inst)
             continue
 
         rows.append({
-            "name":       name,
+            "name":       ticker,
             "volume_usd": volume,
             "oi_usd":     oi_coins * mark,   # openInterest is in coins, not USD
             "mark":       mark,
         })
 
     if not rows:
-        raise PairLiquidityUnavailable("metaAndAssetCtxs returned no usable assets")
+        raise PairLiquidityUnavailable("instrument metrics returned no usable perps")
     return rows
 
 

@@ -5,11 +5,11 @@ Runs automatically every 15 min AND listens for iPhone commands via Telegram.
 
 Commands (send to your bot from iPhone):
   /scan    → immediate market scan
-  /status  → current level, live balance, trade stats (from Hyperliquid)
+  /status  → current level, live balance, trade stats (from Evedex)
   /help    → command list
 
-Balance and trade history are read live from Hyperliquid via
-HYPERLIQUID_ADDRESS (see .env.example) — nothing is tracked manually.
+Balance and trade history are read live from Evedex via EVEDEX_API_KEY
+(see .env.example) — nothing is tracked manually.
 
 Usage:
     python main.py
@@ -30,8 +30,8 @@ import time
 from analysis.multi_timeframe import get_full_analysis
 from analysis.trade_logger import get_stats, log_setup, update_all_pending_outcomes
 from analysis.ict_stats import format_ict_stats
-from analysis.hyperliquid_account import (
-    AccountNotConfigured, get_account_balance, get_recent_fills, summarize_trades,
+from analysis.evedex_account import (
+    AccountNotConfigured, get_account_balance, get_closed_positions, summarize_trades,
 )
 from ai.claude_analyst import generate_setup_standalone
 from notifications.telegram_bot import format_setup_message, send_telegram
@@ -86,8 +86,8 @@ def scan_markets(silent: bool = False) -> str:
         logger.error(str(exc))
         return f"⚠️ {exc}"
     except Exception as exc:
-        logger.error("Nepavyko gauti balanso iš Hyperliquid: %s", exc)
-        return f"⚠️ Nepavyko gauti balanso iš Hyperliquid: {exc}"
+        logger.error("Nepavyko gauti balanso iš Evedex: %s", exc)
+        return f"⚠️ Nepavyko gauti balanso iš Evedex: {exc}"
 
     level_info = get_current_level(balance)
     now        = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -179,11 +179,11 @@ def handle_command(command: str, args: list[str]) -> str:
         return (
             "🤖 <b>Trading Bot komandos:</b>\n\n"
             "/scan — skenuoti rinkas dabar\n"
-            "/status — balansas, lygis ir sandorių statistika (iš Hyperliquid)\n"
+            "/status — balansas, lygis ir sandorių statistika (iš Evedex)\n"
             "/log — bot'o alertų statistika (skirtinga nuo /status — žr. žemiau)\n"
             "/ict — MSS / Fibo OTE / sesijos / funding pjūviai\n"
             "/help — ši pagalba\n\n"
-            "<i>Balansas ir sandoriai imami tiesiogiai iš Hyperliquid — nieko "
+            "<i>Balansas ir sandoriai imami tiesiogiai iš Evedex — nieko "
             "įvesti rankiniu būdu nereikia.</i>"
         )
 
@@ -259,13 +259,13 @@ def handle_command(command: str, args: list[str]) -> str:
         except AccountNotConfigured as exc:
             return f"⚠️ {exc}"
         except Exception as exc:
-            return f"⚠️ Nepavyko gauti balanso iš Hyperliquid: {exc}"
+            return f"⚠️ Nepavyko gauti balanso iš Evedex: {exc}"
 
         level_info = get_current_level(balance)
 
         try:
-            fills   = get_recent_fills(lookback_days=30)
-            summary = summarize_trades(fills)
+            positions = get_closed_positions(lookback_days=30)
+            summary   = summarize_trades(positions)
             trade_line = (
                 f"Sandoriai (30d): {summary['closing_fills']} iš viso | "
                 f"{summary['wins']}W / {summary['losses']}L"
@@ -277,7 +277,7 @@ def handle_command(command: str, args: list[str]) -> str:
             trade_line = "Sandorių istorija laikinai nepasiekiama."
 
         return (
-            f"📊 <b>Account Status</b>  <i>(gyvai iš Hyperliquid)</i>\n\n"
+            f"📊 <b>Account Status</b>  <i>(gyvai iš Evedex)</i>\n\n"
             f"Level:     {level_info['level']} / 30\n"
             f"Balansas:  <b>${balance:.2f}</b>\n"
             f"Tikslas:   ${level_info['next_level_balance']:.2f} "
