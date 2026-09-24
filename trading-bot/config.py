@@ -113,7 +113,14 @@ TP1_FIXED_PCT: float = 0.02
 # to "is the stop tight enough that 2% is worth the risk", which rejects
 # setups where the sweep ran so deep that risk is disproportionate.
 MIN_RR_RATIO: float = 2.0
-LEVERAGE: int = 5                   # Max leverage
+# 5 -> 20: a 30%-of-balance risk sized against a tight SWEEP stop (a few
+# tenths of a percent isn't unusual) was hitting the 5x cap and demanding
+# margin well past what a small account actually has — e.g. a real alert
+# with a 0.3% stop wanted ~$101 margin against a ~$6 balance. Raising the
+# cap lets position sizing use as much leverage as the setup's own stop
+# distance calls for before margin_ok (see risk/position_sizer.py) has to
+# flag it, instead of capping early and manufacturing an unaffordable size.
+LEVERAGE: int = 20                  # Max leverage
 MAX_OPEN_POSITIONS: int = 1
 MIN_CONFIDENCE_SCORE: int = 7
 

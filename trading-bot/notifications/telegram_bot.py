@@ -69,9 +69,11 @@ def format_setup_message(
     struct    = setup.get("structure_4h") or {}
     ict       = setup.get("ict") or {}
     perp      = setup.get("perp_context") or {}
-    risk_usd  = setup.get("risk_usd", 0)
-    pos_usd   = setup.get("position_usd", 0)
-    leverage  = setup.get("leverage", 1)
+    risk_usd   = setup.get("risk_usd", 0)
+    pos_usd    = setup.get("position_usd", 0)
+    leverage   = setup.get("leverage", 1)
+    margin_usd = setup.get("margin_usd", 0)
+    margin_ok  = setup.get("margin_ok", True)
 
     # TP1 freshness is informational only (not gated) — see multi_timeframe.py
     # module docstring for why an old 4H swing isn't treated as invalid.
@@ -187,7 +189,9 @@ def format_setup_message(
         f"  Rizika:    ${risk_usd:.2f} (30%)\n"
         f"  Notional:  ~${pos_usd:.0f}\n"
         f"  Leverage:  {leverage:.0f}x\n"
-        f"\n"
+        f"  Margin:    ${margin_usd:.2f}"
+        + ("\n" if margin_ok else "  ⚠️ viršija balansą — šio dydžio pozicijos neatidarysi\n")
+        + f"\n"
         f"{setup_block}"
         f"\n"
         f"🌍 <b>GLOBALUS TRENDAS:</b>\n"
