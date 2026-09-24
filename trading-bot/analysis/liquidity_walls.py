@@ -219,7 +219,16 @@ if __name__ == "__main__":
         sys.exit(1)
 
     mid = book["mid"]
-    fmt = (lambda p: f"${p:,.4f}") if mid < 1 else (lambda p: f"${p:,.2f}")
+
+    def fmt(p: float) -> str:
+        # Fixed 2dp/4dp broke down for Evedex's sub-cent tokens (PEPE, BONK,
+        # ...), same issue as notifications/telegram_bot.py's _fmt_price.
+        if p == 0:
+            return "$0"
+        import math
+        abs_p = abs(p)
+        decimals = 2 if abs_p >= 1 else -math.floor(math.log10(abs_p)) + 3
+        return f"${p:,.{decimals}f}"
 
     print("=" * 68)
     print(f" EVEDEX LIKVIDUMO SIENOS: {coin}")

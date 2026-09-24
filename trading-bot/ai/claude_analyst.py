@@ -11,6 +11,7 @@ AI analyst module — dual mode:
 """
 import json
 import logging
+import math
 import os
 from typing import Optional
 
@@ -52,6 +53,28 @@ neprieštarauja. Jei abu sutampa su kryptimi, tai stiprina setup'ą; jei kuris n
 
 # ─── Context Builder ──────────────────────────────────────────────────────────
 
+def _fmt_price(p: float) -> str:
+    """
+    Formats a price with enough decimals to stay readable for sub-cent
+    instruments. A fixed 4dp worked fine on Hyperliquid's pair list, but
+    Evedex's low-price tokens (PEPE, BONK, ...) sit around $0.001-0.01,
+    where 4dp rounds an SL/entry gap of a few tenths of a percent down to
+    the same displayed number — which reads as "SL == entry" both to a
+    human and, since this text is what actually gets sent to the Claude
+    API in standalone mode, to the model scoring the setup's confidence.
+
+    Keeps 4dp for anything >= $1 (unchanged from before), and otherwise
+    scales decimals to keep ~4 significant figures. Same helper as
+    notifications/telegram_bot.py's, kept separate rather than shared
+    since both are small, self-contained presentation-layer functions.
+    """
+    if p == 0:
+        return "$0"
+    abs_p = abs(p)
+    decimals = 4 if abs_p >= 1 else -math.floor(math.log10(abs_p)) + 3
+    return f"${p:,.{decimals}f}"
+
+
 def build_analysis_context(analysis: dict, position: dict) -> str:
     """
     Formats full analysis + position data as readable text for Claude Desktop.
@@ -79,9 +102,9 @@ def build_analysis_context(analysis: dict, position: dict) -> str:
             return default
         return obj.get(key, default) if isinstance(obj, dict) else getattr(obj, key, default)
 
-    ob_range   = f"${_v(ob,'low',0):,.4f} – ${_v(ob,'high',0):,.4f}" if ob else "N/A"
+    ob_range   = f"{_fmt_price(_v(ob,'low',0))} – {_fmt_price(_v(ob,'high',0))}" if ob else "N/A"
     fvg_status = (
-        f"${_v(fvg,'bottom',0):,.4f} – ${_v(fvg,'top',0):,.4f} (neužpildytas)"
+        f"{_fmt_price(_v(fvg,'bottom',0))} – {_fmt_price(_v(fvg,'top',0))} (neužpildytas)"
         if fvg else "nėra (tik OB)"
     )
     hook_ago  = hook.get("candles_ago", 0)
@@ -116,7 +139,7 @@ def build_analysis_context(analysis: dict, position: dict) -> str:
     lines = [
         f"╔══ JOE ROSS + SMC ANALIZĖ: {pair} ══╗",
         f"",
-        f"  Kaina dabar:   ${price:>12,.4f}",
+        f"  Kaina dabar:   {_fmt_price(price):>13}",
         f"  Kryptis (4H):  {bias}  [{bos_label} patvirtintas]",
         f"  PD zona:       {pd_zone}  (Fib {fib_pct:.1f}%)",
         f"",
@@ -125,21 +148,21 @@ def build_analysis_context(analysis: dict, position: dict) -> str:
         f"  BTC režimas:   {market_regime.upper()}",
         f"",
         f"  ── JOE ROSS 1-2-3 + HOOK (15m) ──",
-        f"  Hook lygis:    ${hook.get('hook_level', 0):,.4f}",
+        f"  Hook lygis:    {_fmt_price(hook.get('hook_level', 0))}",
         f"  Susiformavo:   prieš {hook_ago} žvakių",
         f"  Kryptis:       {hook.get('pattern','?').upper()}  ✓",
         f"  Įėjimas:       Hook lygis (TTE išjungtas)",
-        f"  SL:            ${sl:,.4f}  (OB riba)",
+        f"  SL:            {_fmt_price(sl)}  (OB riba)",
         f"",
         f"  ── SMC PATVIRTINIMAS (1H) ──",
         f"  Order Block:   {ob_range}",
         f"  FVG:           {fvg_status}",
         f"",
         f"  ── TRADE PARAMETRAI ──",
-        f"  Entry:  ${entry:>12,.4f}",
-        f"  SL:     ${sl:>12,.4f}  (-{sl_pct:.2f}%)",
-        f"  TP1:    ${tp1:>12,.4f}  (+{tp1_pct:.2f}%)  [{tp1_quality}]",
-        f"  TP2:    ${tp2:>12,.4f}",
+        f"  Entry:  {_fmt_price(entry):>13}",
+        f"  SL:     {_fmt_price(sl):>13}  (-{sl_pct:.2f}%)",
+        f"  TP1:    {_fmt_price(tp1):>13}  (+{tp1_pct:.2f}%)  [{tp1_quality}]",
+        f"  TP2:    {_fmt_price(tp2):>13}",
         f"  R:R  =  1:{rr:.1f}",
         f"",
         f"  ── RIZIKA (Level {level}) ──",
