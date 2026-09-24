@@ -26,6 +26,17 @@ logger = logging.getLogger(__name__)
 LOG_FILE            = Path(__file__).parent.parent / "logs" / "trade_log.csv"
 MAX_OUTCOME_CANDLES = 192   # 48 h at 15-minute intervals
 
+# Splits by_tier in get_stats() below. Scanning went from 3 pairs to all 39
+# Evedex crypto perps at once (see pair_selection.py), and most of what got
+# added is thin, illiquid, or freshly-listed (PEPE, BONK, WLFI, ASTER...) —
+# nothing in the sweep/liquidity logic says that trades the same as a major.
+# This is the top-6 by live 24h volume on Evedex (BTC/ETH/HYPE/SOL/XRP/BNB,
+# confirmed via analysis.pair_selection.fetch_pair_liquidity), so /log can
+# show whether the newly-added long tail is actually holding up the same
+# win rate or just riding a handful of majors — not a claim about which
+# coins are "real", just where the volume was on the day this was checked.
+MAJOR_PAIRS = frozenset({"BTC", "ETH", "HYPE", "SOL", "XRP", "BNB"})
+
 COLUMNS = [
     "id", "logged_at", "pair", "bias", "entry_type",
     "entry", "sl", "tp1", "tp2", "rr_ratio",
@@ -332,10 +343,13 @@ def _expectancy(subset: list[dict]) -> Optional[float]:
 
 def get_stats(all_time: bool = False) -> dict:
     """
-    Win rate AND expectancy, broken down by entry type, OB confluence, and
-    R:R band. The R:R bands exist to answer one question directly: whether
-    the low-R:R setups admitted by a lower MIN_RR_RATIO carry their weight
-    or drag the average down.
+    Win rate AND expectancy, broken down by entry type, OB confluence, R:R
+    band, and major/micro-cap tier. The R:R bands exist to answer one
+    question directly: whether the low-R:R setups admitted by a lower
+    MIN_RR_RATIO carry their weight or drag the average down. The tier
+    split answers a newer one: whether scanning all 39 Evedex pairs instead
+    of a handful of majors is diluting the win rate with thin/illiquid
+    coins, or holding up fine.
 
     By default (all_time=False), only rows logged at/after
     config.STRATEGY_EPOCH count. trade_log.csv accumulates forever across
@@ -395,6 +409,10 @@ def get_stats(all_time: bool = False) -> dict:
     ob_no  = [r for r in resolved if str(r.get("ob_confluence")) == "False"]
     by_ob  = {"with_ob": summarize(ob_yes), "without_ob": summarize(ob_no)}
 
+    major = [r for r in resolved if r["pair"] in MAJOR_PAIRS]
+    micro = [r for r in resolved if r["pair"] not in MAJOR_PAIRS]
+    by_tier = {"major": summarize(major), "micro": summarize(micro)}
+
     overall = summarize(resolved)
 
     return {
@@ -411,6 +429,7 @@ def get_stats(all_time: bool = False) -> dict:
         "by_type":       by_type,
         "by_rr":         by_rr,
         "by_ob":         by_ob,
+        "by_tier":       by_tier,
         "all_time":      all_time,
         "epoch":         STRATEGY_EPOCH,
         "excluded_old":  excluded_old,
