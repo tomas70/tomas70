@@ -28,7 +28,7 @@ import schedule
 import time
 
 from analysis.multi_timeframe import get_full_analysis
-from analysis.trade_logger import get_stats, log_setup, update_all_pending_outcomes
+from analysis.trade_logger import MAJOR_PAIRS, get_stats, log_setup, update_all_pending_outcomes
 from analysis.ict_stats import format_ict_stats
 from analysis.evedex_account import (
     AccountNotConfigured, get_account_balance, get_closed_positions, summarize_trades,
@@ -244,6 +244,13 @@ def handle_command(command: str, args: list[str]) -> str:
             lines.append("\n<b>OB confluence:</b>")
             lines.append(f"  Su OB:  {fmt(by_ob['with_ob'])}")
             lines.append(f"  Be OB:  {fmt(by_ob['without_ob'])}")
+
+        by_tier = s.get("by_tier", {})
+        if by_tier.get("major", {}).get("count") or by_tier.get("micro", {}).get("count"):
+            major_names = ", ".join(sorted(MAJOR_PAIRS))
+            lines.append(f"\n<b>Major vs micro-cap:</b>  <i>(major = {major_names})</i>")
+            lines.append(f"  Major: {fmt(by_tier['major'])}")
+            lines.append(f"  Micro: {fmt(by_tier['micro'])}")
         return "\n".join(lines)
 
     if command == "/ict":
