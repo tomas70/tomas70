@@ -4,6 +4,7 @@ TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set in .env to enable sending.
 If not configured, format_setup_message() still works for display in Claude Desktop.
 """
 import logging
+import math
 import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -18,6 +19,26 @@ TIMEZONE = "Europe/Vilnius"
 
 
 # ─── Formatting ───────────────────────────────────────────────────────────────
+
+def _fmt_price(p: float) -> str:
+    """
+    Formats a price with enough decimals to stay readable for sub-cent
+    instruments. A fixed 4dp worked fine on Hyperliquid's pair list (nothing
+    much below DOGE's ~$0.08), but Evedex's low-price tokens (PEPE, BONK,
+    ...) sit around $0.001-0.01, where 4dp isn't enough resolution to show
+    an SL/entry gap of a few tenths of a percent — it silently rounds both
+    to the same displayed number, which reads as "SL == entry" even though
+    the underlying values differ.
+
+    Keeps 4dp for anything >= $1 (unchanged from before), and otherwise
+    scales decimals to keep ~4 significant figures.
+    """
+    if p == 0:
+        return "$0"
+    abs_p = abs(p)
+    decimals = 4 if abs_p >= 1 else -math.floor(math.log10(abs_p)) + 3
+    return f"${p:,.{decimals}f}"
+
 
 def format_setup_message(
     setup: dict,
@@ -72,7 +93,7 @@ def format_setup_message(
         return obj.get(key, default) if isinstance(obj, dict) else getattr(obj, key, default)
 
     bias_arrow   = "⬆️" if bias == "BULLISH" else "⬇️"
-    ob_range     = f"${_v(ob,'low',0):,.2f}–${_v(ob,'high',0):,.2f}" if ob else "N/A"
+    ob_range     = f"{_fmt_price(_v(ob,'low',0))}–{_fmt_price(_v(ob,'high',0))}" if ob else "N/A"
     entry_label  = "🧹 Sweep" if entry_type == "SWEEP" else "📍 Hook"
     daily_bias   = gt.get("daily_bias", "?")
     market_reg   = gt.get("market_regime", "?")
@@ -88,14 +109,14 @@ def format_setup_message(
         mss = ict.get("mss")
         ote = ict.get("ote") or {}
         mss_line = (
-            f"prieš {mss['candles_ago']} žv. (${mss['level']:,.4f})" if mss
+            f"prieš {mss['candles_ago']} žv. ({_fmt_price(mss['level'])})" if mss
             else "nėra (tik displacement)"
         )
         if ote:
             ote_line = (
                 f"{ote['retracement']:.2f} "
                 f"{'✓ OTE 0.62-0.79' if ote.get('in_ote') else '✗ už OTE'} "
-                f"| 0.71 = ${ote['ote_price']:,.4f}"
+                f"| 0.71 = {_fmt_price(ote['ote_price'])}"
             )
         else:
             ote_line = "n/a"
@@ -104,7 +125,7 @@ def format_setup_message(
 
         setup_block = (
             f"🧹 <b>LIQUIDITY SWEEP:</b>\n"
-            f"  Lygis:     {level_pretty} (${sweep.get('level', 0):,.4f})\n"
+            f"  Lygis:     {level_pretty} ({_fmt_price(sweep.get('level', 0))})\n"
             f"  Nušluota:  prieš {sweep.get('candles_ago', '?')} žvakių\n"
             f"  Displacement ✓  |  FVG: {'✓' if sweep.get('has_fvg') else 'nėra (įėjimas prie lygio)'}\n"
             f"  OB zona:   {ob_range}\n"
@@ -155,10 +176,10 @@ def format_setup_message(
         f"⏱ 15m Hook | 4H struktūra | 1H SMC OB | 1D trendas\n"
         f"\n"
         f"💰 <b>POZICIJA:</b>\n"
-        f"  Entry:  <code>${entry:,.4f}</code>\n"
-        f"  SL:     <code>${sl:,.4f}</code>  ({sl_sign}{sl_pct:.2f}%)\n"
-        f"  TP1:    <code>${tp1:,.4f}</code>  ({tp1_sign}{tp1_pct:.2f}%)  {tp1_quality}\n"
-        f"  TP2:    <code>${tp2:,.4f}</code>\n"
+        f"  Entry:  <code>{_fmt_price(entry)}</code>\n"
+        f"  SL:     <code>{_fmt_price(sl)}</code>  ({sl_sign}{sl_pct:.2f}%)\n"
+        f"  TP1:    <code>{_fmt_price(tp1)}</code>  ({tp1_sign}{tp1_pct:.2f}%)  {tp1_quality}\n"
+        f"  TP2:    <code>{_fmt_price(tp2)}</code>\n"
         f"  R:R  =  1:{rr:.1f}\n"
         f"{funding_line}"
         f"\n"
@@ -174,7 +195,7 @@ def format_setup_message(
         f"  BTC:       {market_reg} ✓\n"
         f"\n"
         f"⚠️ <b>INVALIDATION:</b> {'žemiau' if bias == 'BULLISH' else 'virš'} "
-        f"<code>${sl:,.4f}</code> (SL lygis)\n"
+        f"<code>{_fmt_price(sl)}</code> (SL lygis)\n"
         f"\n"
         f"💬 <i>{reasoning}</i>\n"
         f"\n"
