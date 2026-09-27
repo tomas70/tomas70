@@ -73,6 +73,27 @@ def _get(path: str, params: Optional[dict] = None, timeout: int = 10) -> dict:
 _last_known_balance: Optional[float] = None
 
 
+def _all_positions() -> list[dict]:
+    """
+    Raw GET /api/position response, unfiltered — includes rows for
+    instruments the account has traded before but currently holds zero of
+    (quantity 0, unRealizedPnL 0). get_open_positions() below filters those
+    out; get_account_balance needs the unrealized-PnL sum either way, so it
+    reads this directly rather than duplicating the request.
+    """
+    return _get("/api/position").get("list", [])
+
+
+def get_open_positions() -> list[dict]:
+    """
+    Currently open positions (nonzero quantity) — instrument, side,
+    quantity, avgPrice, leverage, unRealizedPnL, fee, bankruptcyPrice,
+    createdAt/updatedAt, tpslList (any TP/SL orders already attached on
+    the exchange).
+    """
+    return [p for p in _all_positions() if float(p.get("quantity", 0) or 0) != 0]
+
+
 def get_account_balance() -> float:
     """
     Returns the account's total equity in USDT: funding (cash) balance plus
@@ -95,8 +116,7 @@ def get_account_balance() -> float:
         available = _get("/api/market/available-balance")
         cash = float(available["funding"]["balance"])
 
-        positions = _get("/api/position").get("list", [])
-        unrealized = sum(float(p.get("unRealizedPnL", 0) or 0) for p in positions)
+        unrealized = sum(float(p.get("unRealizedPnL", 0) or 0) for p in _all_positions())
 
         balance = cash + unrealized
         _last_known_balance = balance

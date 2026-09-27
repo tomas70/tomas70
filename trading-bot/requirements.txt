@@ -8,7 +8,10 @@ python-dotenv>=1.0.0
 httpx>=0.27.0
 
 # MCP server for Claude Desktop integration
-mcp[cli]>=1.0.0
+# Pinned below 2.0: mcp 2.x renamed FastMCP to MCPServer and changed its
+# import path (mcp.server.fastmcp -> mcp.server.mcpserver), which broke a
+# fresh install of mcp_server.py's unpinned ">=1.0.0" the moment 2.x shipped.
+mcp[cli]>=1.0.0,<2.0.0
 
 # Standalone scheduler mode
 schedule>=1.2.0

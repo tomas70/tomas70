@@ -12,15 +12,21 @@ Setup in Claude Desktop (claude_desktop_config.json):
       "args": ["/absolute/path/to/trading-bot/mcp_server.py"],
       "env": {
         "TELEGRAM_BOT_TOKEN": "your_token_here",
-        "TELEGRAM_CHAT_ID":   "your_chat_id_here"
+        "TELEGRAM_CHAT_ID":   "your_chat_id_here",
+        "EVEDEX_API_KEY":     "your_readonly_api_key_here"
       }
     }
   }
 }
 
+EVEDEX_API_KEY is only needed for get_open_positions() (read-only account
+key, Settings -> API on the exchange) — everything else here works with
+no keys at all.
+
 Then in Claude Desktop just say:
   "Skenuok rinkas, mano balansas $26"
   "Analizuok BTCUSDT, balansas $212"
+  "Kokios mano atviros pozicijos, ką daryti?"
   "Išsiųsk setup'ą į Telegram"
 """
 import dataclasses
@@ -42,6 +48,7 @@ from mcp.server.fastmcp import FastMCP
 
 from analysis.market_data import get_all_timeframes, get_ohlcv, invalidate_cache
 from analysis.multi_timeframe import get_full_analysis
+from analysis.position_tracker import get_position_recommendations
 from ai.claude_analyst import build_analysis_context
 from notifications.telegram_bot import format_setup_message, send_telegram
 from risk.position_sizer import get_current_level, get_position_summary
@@ -284,6 +291,23 @@ def get_account_status(account_balance: float) -> str:
             pass
 
     return json.dumps({**info, "trade_history": history}, ensure_ascii=False)
+
+
+@mcp.tool()
+def get_open_positions() -> str:
+    """
+    Returns every currently open Evedex position with a hold/reconsider
+    recommendation: compares each position's direction against a fresh 4H
+    structure read and, when the bot has a recent alert on record for the
+    same pair+direction, against that alert's own SL/TP1. Requires
+    EVEDEX_API_KEY (read-only account key) in this server's environment —
+    see config.py / .env.example.
+    """
+    try:
+        recs = get_position_recommendations()
+    except Exception as exc:
+        return json.dumps({"error": str(exc)}, ensure_ascii=False)
+    return json.dumps(recs, ensure_ascii=False, default=str)
 
 
 @mcp.tool()
