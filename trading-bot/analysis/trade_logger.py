@@ -12,7 +12,7 @@ RR bands actually correlate with TP1 hits in live market conditions.
 import csv
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -438,3 +438,31 @@ def get_stats(all_time: bool = False) -> dict:
         "ob_yes_n":      len(ob_yes),
         "ob_no_n":       len(ob_no),
     }
+
+
+def find_recent_alert(pair: str, bias: str, before: datetime, within_hours: float = 48) -> Optional[dict]:
+    """
+    Most recent row logged for `pair`+`bias` in the `within_hours` window
+    immediately before `before` — best-effort context for analysis.position_
+    tracker: lets a recommendation on an open position reference the SL/TP1/
+    TP2 the bot actually planned, when the position came from one of its own
+    alerts rather than a manual entry.
+
+    48h default matches MAX_OUTCOME_CANDLES (the same window trade outcomes
+    are resolved within) — an alert older than that has already resolved
+    one way or another in the bot's own bookkeeping, so treating it as "the
+    plan" for a position opened now would be reaching past what the alert
+    was ever meant to describe.
+
+    Returns None on no plausible match — callers must treat that as "no bot
+    alert on record for this position", never as "this position is fine".
+    Any status counts (pending/tp1_hit/sl_hit/expired): the position itself
+    is the source of truth for whether the trade is still open, not this.
+    """
+    window_start = before - timedelta(hours=within_hours)
+    candidates = [
+        r for r in _read_rows()
+        if r["pair"] == pair and r["bias"] == bias
+        and window_start <= datetime.fromisoformat(r["logged_at"]) <= before
+    ]
+    return max(candidates, key=lambda r: r["logged_at"]) if candidates else None

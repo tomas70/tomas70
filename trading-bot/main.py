@@ -4,9 +4,10 @@ Standalone scheduler + Telegram command bot.
 Runs automatically every 15 min AND listens for iPhone commands via Telegram.
 
 Commands (send to your bot from iPhone):
-  /scan    → immediate market scan
-  /status  → current level, live balance, trade stats (from Evedex)
-  /help    → command list
+  /scan      → immediate market scan
+  /status    → current level, live balance, trade stats (from Evedex)
+  /positions → open positions with a hold/reconsider recommendation
+  /help      → command list
 
 Balance and trade history are read live from Evedex via EVEDEX_API_KEY
 (see .env.example) — nothing is tracked manually.
@@ -33,6 +34,7 @@ from analysis.ict_stats import format_ict_stats
 from analysis.evedex_account import (
     AccountNotConfigured, get_account_balance, get_closed_positions, summarize_trades,
 )
+from analysis.position_tracker import get_position_recommendations
 from ai.claude_analyst import generate_setup_standalone
 from notifications.telegram_bot import format_setup_message, send_telegram
 from notifications.bot_commands import listen_for_commands
@@ -180,6 +182,7 @@ def handle_command(command: str, args: list[str]) -> str:
             "🤖 <b>Trading Bot komandos:</b>\n\n"
             "/scan — skenuoti rinkas dabar\n"
             "/status — balansas, lygis ir sandorių statistika (iš Evedex)\n"
+            "/positions — atviros pozicijos + laikyti/peržiūrėti rekomendacija\n"
             "/log — bot'o alertų statistika (skirtinga nuo /status — žr. žemiau)\n"
             "/ict — MSS / Fibo OTE / sesijos / funding pjūviai\n"
             "/help — ši pagalba\n\n"
@@ -292,6 +295,44 @@ def handle_command(command: str, args: list[str]) -> str:
             f"Progress:  {level_info['progress_pct']:.0f}%\n\n"
             f"{trade_line}"
         )
+
+    if command == "/positions":
+        try:
+            recs = get_position_recommendations()
+        except AccountNotConfigured as exc:
+            return f"⚠️ {exc}"
+        except Exception as exc:
+            logger.warning("Nepavyko gauti atvirų pozicijų: %s", exc)
+            return f"⚠️ Nepavyko gauti pozicijų iš Evedex: {exc}"
+
+        if not recs:
+            return "📭 <b>Pozicijos</b>\n\nAtvirų pozicijų nėra."
+
+        # ⚠️ first for anything that isn't a plain hold, so a scroll-past on
+        # the phone still sees what needs attention.
+        needs_look = [r for r in recs if r["action"] not in ("LAIKYTI", "LAIKYTI (be konteksto)")]
+        icon = {
+            "PERŽIŪRĖTI":            "🔴",
+            "PATIKRINTI SL":         "🟠",
+            "SL Į BREAKEVEN":        "🟡",
+            "LAIKYTI":               "🟢",
+            "LAIKYTI (be konteksto)": "⚪",
+            "NEŽINOMA":              "⚪",
+        }
+
+        lines = [f"📂 <b>Pozicijos</b>  <i>({len(recs)}, {len(needs_look)} verta peržiūrėti)</i>\n"]
+        for r in recs:
+            pnl_sign = "+" if r["unrealized_pnl"] >= 0 else ""
+            price_line = (
+                f"${r['current_price']:,.6g}" if r["current_price"] is not None else "n/a"
+            )
+            lines.append(
+                f"{icon.get(r['action'], '⚪')} <b>{r['pair']} {r['side']}</b>  "
+                f"(uPnL {pnl_sign}${r['unrealized_pnl']:.2f})\n"
+                f"  Entry: ${r['entry']:,.6g}  |  Dabar: {price_line}  |  {r['leverage']}x\n"
+                f"  <b>{r['action']}</b> — {r['reason']}\n"
+            )
+        return "\n".join(lines)
 
     return f"❓ Nežinoma komanda: {command}\nRašyk /help norėdamas pamatyti sąrašą."
 

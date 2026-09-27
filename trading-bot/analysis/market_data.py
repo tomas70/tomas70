@@ -103,6 +103,23 @@ def to_instrument(pair: str) -> str:
     return _instrument_map().get(pair) or f"{pair}USD"
 
 
+def from_instrument(name: str) -> str:
+    """
+    Evedex instrument name ("1000BONKUSD") -> bot-internal ticker ("BONK"),
+    the inverse of to_instrument(). Used for open positions read back from
+    the account API (analysis.evedex_account.get_open_positions), which
+    report the exchange's own instrument name, not the ticker the rest of
+    the bot scans/logs under.
+
+    Falls back to stripping a trailing "USD" when the map doesn't have this
+    instrument (e.g. an account holds a position in something pair_selection
+    currently filters out as non-tradable) — an approximation, but the same
+    one to_instrument already makes in reverse.
+    """
+    inverse = {v: k for k, v in _instrument_map().items()}
+    return inverse.get(name) or name.removesuffix("USD")
+
+
 def _is_retryable(exc: Exception) -> bool:
     """True for transient failures worth a retry: rate limits, 5xx, network."""
     if isinstance(exc, httpx.HTTPStatusError):
