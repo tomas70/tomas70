@@ -120,6 +120,22 @@ def from_instrument(name: str) -> str:
     return inverse.get(name) or name.removesuffix("USD")
 
 
+def exchange_url(pair: str) -> str:
+    """
+    Direct link to `pair`'s trade page on the Evedex web app — one tap from
+    a Telegram alert or /positions straight to the right instrument.
+
+    There's no public API for the kind of pre-filled deep link ("signal"
+    links with entry/SL/TP baked into a UUID) some other bots post — it
+    isn't in Evedex's documented Auth/Exchange/Market Data surface, and
+    trading-api.evedex.com has no /api/signal-shaped endpoint to create
+    one. This is the plain instrument link instead: no pre-filled
+    parameters, but it's a real, working, undocumented-API-free route
+    (confirmed live: GET /en/trade/{instrument} returns 200).
+    """
+    return f"https://exchange.evedex.com/en/trade/{to_instrument(pair)}"
+
+
 def _is_retryable(exc: Exception) -> bool:
     """True for transient failures worth a retry: rate limits, 5xx, network."""
     if isinstance(exc, httpx.HTTPStatusError):

@@ -35,6 +35,7 @@ from analysis.evedex_account import (
     AccountNotConfigured, get_account_balance, get_closed_positions, summarize_trades,
 )
 from analysis.position_tracker import get_position_recommendations
+from analysis.market_data import exchange_url
 from ai.claude_analyst import generate_setup_standalone
 from notifications.telegram_bot import format_setup_message, send_telegram
 from notifications.bot_commands import listen_for_commands
@@ -338,6 +339,7 @@ def handle_command(command: str, args: list[str]) -> str:
                 f"  Entry: ${r['entry']:,.6g}  |  Dabar: {price_line}  |  {r['leverage']}x\n"
                 f"{levels_line}"
                 f"  <b>{r['action']}</b> — {r['reason']}\n"
+                f"  🔗 <a href=\"{exchange_url(r['pair'])}\">Atidaryti {r['pair']} Evedex</a>\n"
             )
         return "\n".join(lines)
 

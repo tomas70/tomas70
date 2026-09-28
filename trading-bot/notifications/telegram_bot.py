@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
+from analysis.market_data import exchange_url
 from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
 logger = logging.getLogger(__name__)
@@ -204,7 +205,9 @@ def format_setup_message(
         f"💬 <i>{reasoning}</i>\n"
         f"\n"
         f"📈 Confidence: {confidence}/10\n"
-        f"⏰ {now}"
+        f"⏰ {now}\n"
+        f"\n"
+        f"🔗 <a href=\"{exchange_url(pair)}\">Atidaryti {pair} Evedex</a>"
     )
 
 
