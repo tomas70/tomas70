@@ -500,6 +500,28 @@ def get_full_analysis(pair: str) -> dict:
 
     levels = _build_levels(bias, entry, sl, unswept_highs, unswept_lows, len(df_4h) - 1)
 
+    # ── Shared Gate: Already Played Out ───────────────────────────────────────
+    # SWEEP_LOOKBACK lets a sweep up to 24 bars (6h) old still qualify — right
+    # for slow reversals, wrong for a fast one: nothing before this compared
+    # the computed levels against where price actually is NOW, so a sweep
+    # detected on its last eligible bar could hand back an "entry" the market
+    # left behind bars ago, with TP1 (or worse) already touched by the time
+    # the scan runs at all, let alone by the time a human reads the alert.
+    # Caught here, cheaply, before the R:R/trend gates that fetch more data
+    # for a setup this would throw out anyway.
+    tp1_already_hit = (
+        (bias == "bullish" and current_price >= levels["tp1"]) or
+        (bias == "bearish" and current_price <= levels["tp1"])
+    )
+    if tp1_already_hit:
+        return {
+            "valid":  False,
+            "reason": (
+                f"{bias}: price ({current_price:.6g}) already at/past TP1 "
+                f"({levels['tp1']:.6g}) — sweep detected too late to act on"
+            ),
+        }
+
     # ── Shared Gate: R:R Check ────────────────────────────────────────────────
     if levels["rr_ratio"] < MIN_RR_RATIO:
         return {
