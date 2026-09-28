@@ -326,10 +326,17 @@ def handle_command(command: str, args: list[str]) -> str:
             price_line = (
                 f"${r['current_price']:,.6g}" if r["current_price"] is not None else "n/a"
             )
+            levels_line = ""
+            if r.get("reference_sl") or r.get("reference_tp1"):
+                tag = " (įvertis)" if r.get("levels_estimated") else ""
+                sl_s  = f"${r['reference_sl']:,.6g}"  if r.get("reference_sl")  else "n/a"
+                tp1_s = f"${r['reference_tp1']:,.6g}" if r.get("reference_tp1") else "n/a"
+                levels_line = f"  SL: {sl_s}  |  TP1: {tp1_s}{tag}\n"
             lines.append(
                 f"{icon.get(r['action'], '⚪')} <b>{r['pair']} {r['side']}</b>  "
                 f"(uPnL {pnl_sign}${r['unrealized_pnl']:.2f})\n"
                 f"  Entry: ${r['entry']:,.6g}  |  Dabar: {price_line}  |  {r['leverage']}x\n"
+                f"{levels_line}"
                 f"  <b>{r['action']}</b> — {r['reason']}\n"
             )
         return "\n".join(lines)

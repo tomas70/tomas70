@@ -31,11 +31,26 @@ import logging
 from datetime import datetime
 
 from .evedex_account import get_open_positions
+from .liquidity_walls import nearest_protective_wall
 from .market_data import from_instrument, get_ohlcv
 from .smc import detect_market_structure
 from .trade_logger import find_recent_alert
+from config import TP1_FIXED_PCT
 
 logger = logging.getLogger(__name__)
+
+# Why "no matched alert" is the common case, not a bug: the bot has no
+# execution path (see evedex_account.py's module docstring — read-only,
+# never signs or places orders), so every position here was opened
+# manually. And even a position opened straight off a bot alert often
+# won't have a matching trade_log.csv row: scan_markets() in main.py logs
+# and sends only the SINGLE highest-R:R setup per scan cycle — every other
+# pair that also qualified that cycle shows up in the scan's own checklist
+# but is never logged.
+NO_ALERT_NOTE = (
+    "botas nesudaro orderių ir kiekvieną scan'ą į žurnalą įrašo tik vieną, geriausią R:R setup'ą — "
+    "kitos tą kartą atitikusios poros niekur neišlieka"
+)
 
 
 def _position_bias(side: str) -> str:
@@ -59,12 +74,47 @@ def _current_context(pair: str) -> dict:
     }
 
 
-def _decide(bias: str, current_price: float, structure_bias: str, matched: dict | None) -> tuple[str, str]:
+def _estimated_levels(pair: str, bias: str, entry: float) -> dict:
+    """
+    Reference SL/TP1 for a position with no matched bot alert (see
+    NO_ALERT_NOTE) — built the same way the bot sizes a FRESH entry at this
+    exact price, so the comparison in _decide() below still means
+    something instead of just giving up:
+
+      TP1  entry ± config.TP1_FIXED_PCT, the same fixed target every bot
+           setup uses (multi_timeframe.py's _tp_targets) regardless of
+           structure.
+      SL   the nearest live order-book wall on the protective side
+           (liquidity_walls.nearest_protective_wall) — a stand-in for the
+           structural sweep level the bot would have used had it actually
+           detected an entry here. Not a claim that this is what the bot
+           WOULD have alerted, only the closest analogue computable after
+           the fact; None when no wall is visible nearby (a real
+           possibility, not an error — see liquidity_walls.py's own
+           "KNOWN LIMIT" note).
+    """
+    tp1 = entry * (1 + TP1_FIXED_PCT) if bias == "bullish" else entry * (1 - TP1_FIXED_PCT)
+    try:
+        wall = nearest_protective_wall(pair, entry, bias)
+    except Exception:
+        wall = None
+    return {"sl": wall.price if wall else None, "tp1": tp1}
+
+
+def _decide(
+    bias: str,
+    current_price: float,
+    structure_bias: str,
+    sl: float | None,
+    tp1: float | None,
+    is_estimate: bool,
+) -> tuple[str, str]:
     """
     The two situations that actually call for action, checked in order:
     the structure that justified the direction has flipped, or price has
-    already cleared the bot's own planned SL/TP1 without the position
-    apparently having been closed. Everything else is "hold".
+    already cleared SL/TP1 (from a matched alert, or — failing that — the
+    estimate from _estimated_levels) without the position apparently
+    having been closed. Everything else is "hold".
     """
     if structure_bias is not None and structure_bias != bias:
         return (
@@ -72,37 +122,35 @@ def _decide(bias: str, current_price: float, structure_bias: str, matched: dict 
             f"4H struktūra apsivertė į {structure_bias} — pradinė {bias} tezė daugiau nebegalioja.",
         )
 
-    if matched is None or current_price is None:
+    if current_price is None or (not sl and not tp1):
         return (
             "LAIKYTI (be konteksto)",
-            "Struktūra vis dar sutampa su pozicijos kryptimi, bet nerastas atitinkamas bot'o "
-            "alertas šiai pozicijai — SL/TP1 palyginimui duomenų nėra.",
+            f"Struktūra vis dar sutampa su pozicijos kryptimi, bet SL/TP1 palyginimui duomenų "
+            f"nėra ({NO_ALERT_NOTE}, o artima order book siena šiuo metu nematoma).",
         )
 
-    try:
-        sl  = float(matched.get("sl")  or 0)
-        tp1 = float(matched.get("tp1") or 0)
-    except (TypeError, ValueError):
-        sl = tp1 = 0.0
+    sl_label  = "įvertinto (artimiausios order book sienos)" if is_estimate else "bot'o alerto"
+    tp1_label = "įvertinto (fiksuoto 2%)" if is_estimate else "bot'o alerto"
+    tag       = " (įvertis, ne bot'o alertas)" if is_estimate else ""
 
-    hit_sl  = sl  and ((bias == "bullish" and current_price <= sl)  or (bias == "bearish" and current_price >= sl))
-    hit_tp1 = tp1 and ((bias == "bullish" and current_price >= tp1) or (bias == "bearish" and current_price <= tp1))
+    hit_sl  = bool(sl)  and ((bias == "bullish" and current_price <= sl)  or (bias == "bearish" and current_price >= sl))
+    hit_tp1 = bool(tp1) and ((bias == "bullish" and current_price >= tp1) or (bias == "bearish" and current_price <= tp1))
 
     if hit_sl:
         return (
             "PATIKRINTI SL",
-            f"Kaina jau peržengė bot'o alerto SL lygį (${sl:,.6g}) — patikrink, ar tavo "
-            f"stop'as biržoje realiai suveikė.",
+            f"Kaina jau peržengė {sl_label} SL lygį (${sl:,.6g}) — patikrink, ar tavo "
+            f"stop'as biržoje realiai suveikė.{tag}",
         )
     if hit_tp1:
         return (
             "SL Į BREAKEVEN",
-            f"Kaina jau pasiekė bot'o alerto TP1 (${tp1:,.6g}) — struktūra vis dar sutampa, "
-            f"apsvarstyk SL perkėlimą į breakeven ir važiavimą link TP2.",
+            f"Kaina jau pasiekė {tp1_label} TP1 (${tp1:,.6g}) — struktūra vis dar sutampa, "
+            f"apsvarstyk SL perkėlimą į breakeven ir važiavimą link TP2.{tag}",
         )
     return (
         "LAIKYTI",
-        "Struktūra vis dar sutampa su pozicijos kryptimi, kaina tarp bot'o alerto SL ir TP1.",
+        f"Struktūra vis dar sutampa su pozicijos kryptimi, kaina tarp {sl_label} SL ir TP1.{tag}",
     )
 
 
@@ -129,10 +177,24 @@ def recommend(position: dict) -> dict:
         except ValueError:
             logger.debug("%s: unparseable createdAt %r", pair, created_at)
 
+    if matched:
+        try:
+            sl, tp1 = float(matched.get("sl") or 0) or None, float(matched.get("tp1") or 0) or None
+        except (TypeError, ValueError):
+            sl = tp1 = None
+        is_estimate = False
+    elif current_price is not None:
+        est = _estimated_levels(pair, bias, entry)
+        sl, tp1 = est["sl"], est["tp1"]
+        is_estimate = True
+    else:
+        sl = tp1 = None
+        is_estimate = True
+
     if current_price is None:
         action, reason = "NEŽINOMA", "Rinkos duomenys šiuo metu nepasiekiami."
     else:
-        action, reason = _decide(bias, current_price, structure_bias, matched)
+        action, reason = _decide(bias, current_price, structure_bias, sl, tp1, is_estimate)
 
     return {
         "pair":             pair,
@@ -144,6 +206,9 @@ def recommend(position: dict) -> dict:
         "current_price":    current_price,
         "structure_bias":   structure_bias,
         "matched_alert":    matched,
+        "reference_sl":     sl,
+        "reference_tp1":    tp1,
+        "levels_estimated": is_estimate,
         "action":           action,
         "reason":           reason,
     }
