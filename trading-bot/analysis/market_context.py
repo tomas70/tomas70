@@ -40,6 +40,7 @@ import time
 from typing import Optional
 
 from .market_data import get_instruments
+from .pair_selection import NON_TRADABLE_STATES, TRADABLE_TYPES
 
 logger = logging.getLogger(__name__)
 
@@ -70,9 +71,9 @@ def _fetch_all() -> dict[str, dict]:
 
     out: dict[str, dict] = {}
     for inst in instruments:
-        if not isinstance(inst, dict) or inst.get("type") != "perpetual-futures":
+        if not isinstance(inst, dict) or inst.get("type") not in TRADABLE_TYPES:
             continue
-        if inst.get("trading") in ("none", "restricted"):
+        if inst.get("trading") in NON_TRADABLE_STATES:
             continue
         ticker = (inst.get("from") or {}).get("symbol")
         if not ticker:

@@ -18,10 +18,13 @@ are NOT in the same units:
                   to become USD, or the filter is wrong by whatever the
                   coin price happens to be
 
-Perpetuals only. Evedex also lists forex/indices/equities (EURUSD, DAX40USD,
-SPYUSD, TSLAUSD...), but the bot's logic assumes crypto perps throughout
-(shorting, funding, the bare ticker that market_data.to_instrument expects)
-— mixing them in would need a broader change than a threshold.
+Not crypto-only: Evedex also lists commodities/stocks/forex/premarket/index
+perpetuals (XAUUSD, TSLAUSD, EURUSD, ANTHROPICUSD, SPYUSD...), and nothing
+in the bot's SWEEP/structure logic is crypto-specific — ICT itself
+originated in FX. Included alongside crypto perps, gated the same way by
+`type` and `trading` state below. Most of the index/forex list turns out
+to be `trading=marketMakerOnly` (retail can't actually open a position),
+which the same trading-state filter already excludes.
 
 Standalone check (prints what currently qualifies and why):
     .venv/bin/python -m analysis.pair_selection
@@ -48,9 +51,25 @@ class PairLiquidityUnavailable(Exception):
     """Raised when the exchange metadata can't be read or doesn't parse."""
 
 
+# Asset classes worth scanning. "perpetual-futures" is crypto; the rest are
+# Evedex's non-crypto perps (see module docstring). Deliberately excludes
+# nothing on asset-class grounds — the trading-state check below is what
+# actually keeps out anything not retail-tradable.
+TRADABLE_TYPES = frozenset({
+    "perpetual-futures", "commodities", "stocks", "forex", "premarket", "indices",
+})
+
+# Trading states that mean "not actually openable by a retail account", on
+# top of the obvious "none"/"restricted": marketMakerOnly covers most of
+# Evedex's forex/index list (GBPUSD, DAX40USD, NAS100USD, ...) — listed, has
+# a price, but not a market a normal account can enter.
+NON_TRADABLE_STATES = frozenset({"none", "restricted", "marketMakerOnly"})
+
+
 def fetch_pair_liquidity() -> list[dict]:
     """
-    Every listed crypto perp with its USD volume and USD open interest.
+    Every listed, retail-tradable perp (crypto and non-crypto — see
+    TRADABLE_TYPES) with its USD volume and USD open interest.
 
     Returns [{"name", "volume_usd", "oi_usd", "mark"}], unsorted. `name` is
     the bare ticker ("BTC"), not the Evedex instrument name ("BTCUSD").
@@ -67,9 +86,9 @@ def fetch_pair_liquidity() -> list[dict]:
 
     rows: list[dict] = []
     for inst in instruments:
-        if not isinstance(inst, dict) or inst.get("type") != "perpetual-futures":
+        if not isinstance(inst, dict) or inst.get("type") not in TRADABLE_TYPES:
             continue
-        if inst.get("trading") in ("none", "restricted"):
+        if inst.get("trading") in NON_TRADABLE_STATES:
             continue
         ticker = (inst.get("from") or {}).get("symbol")
         if not ticker:
