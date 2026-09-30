@@ -33,11 +33,13 @@ HOOK_SETUP_ENABLED: bool = False
 # with the current one, and a real improvement (or regression) gets diluted
 # into invisibility. Full unfiltered history is still available via /log all.
 #
-# Last bumped: SWEEP_LOOKBACK widened 12 -> 24 bars, one day after the TP1
-# change, while resetting still only cost about a day of data. Bumped
-# together so this window measures one configuration — fixed 2% TP at
-# MIN_RR 2.0 with a 6-hour sweep window — instead of a blend of two.
-STRATEGY_EPOCH: str = "2026-09-12T19:04:09+00:00"
+# Last bumped: SWEEP entry switched from the displacement's FVG (when one
+# existed) to the reclaimed level itself, always. by_fvg in get_stats()
+# made the comparison answerable over the first 109 logged trades: level-
+# only entries won clearly (83.0% win / +3.09R, n=88) over FVG entries
+# (71.4% / +1.25R, n=21). Every row before this timestamp was logged under
+# the old FVG-preferring entry rule.
+STRATEGY_EPOCH: str = "2026-09-30T12:21:09+00:00"
 
 # ── Pair selection ────────────────────────────────────────────────────────────
 # Scan every perp that is actually liquid right now instead of a fixed list.

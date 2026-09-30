@@ -362,15 +362,20 @@ def _try_sweep_setup(
     # traded, and it's a property of the market rather than of list order.
     sweep, disp_i, bias, level = max(qualifying, key=lambda q: q[0].index)
 
-    # Entry: retest of the imbalance the displacement left, at its
-    # proximal edge (the side price reaches first on the retrace).
-    # No FVG means the impulse was continuous — fall back to the
-    # reclaimed level itself, which is the same idea one step wider.
+    # Entry: retest of the reclaimed level itself, not the displacement's
+    # FVG. Used to prefer the FVG's proximal edge when one existed (a
+    # shallower retrace, closer to price at detection time) and fall back
+    # to the level otherwise — logging sweep_has_fvg/fvg_confluence since
+    # the SWEEP setup shipped made that comparison answerable, and over
+    # the first 109 logged trades the level-only entries won clearly:
+    # 83.0% win / +3.09R (n=88) vs. 71.4% / +1.25R (n=21) for FVG entries.
+    # A shallower retrace turns out to be a weaker filter, not a more
+    # precise one — it apparently lets in retests with less behind them.
+    # entry_fvg is still computed and logged (fvg_confluence,
+    # sweep_has_fvg) purely as an observational column now, same status as
+    # OB/ICT/wall/volume_profile.
     entry_fvg = find_entry_fvg(df_15m, bias, disp_i)
-    if entry_fvg is not None:
-        entry = entry_fvg.top if bias == "bullish" else entry_fvg.bottom
-    else:
-        entry = level
+    entry = level
 
     # Invalidation is the sweep extreme: if price trades back through
     # it, the level did not hold and the premise is gone.
