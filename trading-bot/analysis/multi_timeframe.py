@@ -386,6 +386,16 @@ def _try_sweep_setup(
     atr_1h     = calculate_atr(df_1h)
     nearest_ob = _find_nearest_ob(active_obs, current_price, bias, atr_1h) if active_obs else None
 
+    # Approximate Fixed Range Volume Profile over the consolidation the sweep
+    # broke out of (yesterday's range — see liquidity.get_previous_day_range).
+    # Recorded, NOT gated, same reasoning as the OB/ICT/wall columns above:
+    # whether entries near POC (vs. entries elsewhere in VAL-VAH) actually
+    # resolve better is answerable from logged data, not assumed up front.
+    volume_profile = (
+        {"poc": prev_day["poc"], "vah": prev_day["vah"], "val": prev_day["val"]}
+        if prev_day.get("poc") is not None else None
+    )
+
     return {
         "bias":        bias,
         "entry":       entry,
@@ -394,6 +404,7 @@ def _try_sweep_setup(
         "ross_hook":   None,
         "order_block": nearest_ob,   # info only for this setup, not a gate
         "fvg":         entry_fvg,
+        "volume_profile": volume_profile,
         "sweep": {
             "level":       sweep.level,
             "level_name":  sweep.level_name,
@@ -474,6 +485,7 @@ def get_full_analysis(pair: str) -> dict:
     hook           = setup["ross_hook"]
     nearest_ob     = setup["order_block"]
     confluence_fvg = setup["fvg"]
+    volume_profile = setup.get("volume_profile")   # SWEEP only; None for HOOK
 
     # ── Premium / Discount Zone (confluence info — bonus, not a hard gate) ────
     # PD theory assumes a mean-reversion retracement entry (short the premium
@@ -590,6 +602,7 @@ def get_full_analysis(pair: str) -> dict:
         "sweep":         setup["sweep"],
         "atr_15m_pct":   atr_pct,
         "ict":           ict,
+        "volume_profile": volume_profile,
         "perp_context":  perp,
         "liquidity_wall": (
             {

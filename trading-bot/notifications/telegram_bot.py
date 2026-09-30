@@ -70,6 +70,7 @@ def format_setup_message(
     struct    = setup.get("structure_4h") or {}
     ict       = setup.get("ict") or {}
     perp      = setup.get("perp_context") or {}
+    vp        = setup.get("volume_profile") or {}
     risk_usd   = setup.get("risk_usd", 0)
     pos_usd    = setup.get("position_usd", 0)
     leverage   = setup.get("leverage", 1)
@@ -126,6 +127,27 @@ def format_setup_message(
         kz = ict.get("killzone")
         ses_line = f"{ict.get('session', '?')}{f' ({kz})' if kz else ''}"
 
+        # AMD/Volume Profile confluence — same "recorded, not gated" status
+        # as the ICT lines above. POC/VAH/VAL are an approximation (candle
+        # volume spread across its own high-low range, not tick data — see
+        # liquidity.compute_volume_profile), so this is directional context
+        # for whether entry landed near the level that traded the most
+        # volume in yesterday's range, not a precise number to trade off.
+        if vp:
+            poc, vah, val = vp["poc"], vp["vah"], vp["val"]
+            if val <= entry <= vah:
+                vp_pos = "Value Area viduje" + (" (POC!)" if abs(entry - poc) / poc < 0.002 else "")
+            elif entry > vah:
+                vp_pos = "virš Value Area"
+            else:
+                vp_pos = "žemiau Value Area"
+            vp_line = (
+                f"  POC: {_fmt_price(poc)}  |  VAH: {_fmt_price(vah)}  |  VAL: {_fmt_price(val)}\n"
+                f"  Entry vs VP: {vp_pos}\n"
+            )
+        else:
+            vp_line = ""
+
         setup_block = (
             f"🧹 <b>LIQUIDITY SWEEP:</b>\n"
             f"  Lygis:     {level_pretty} ({_fmt_price(sweep.get('level', 0))})\n"
@@ -137,6 +159,7 @@ def format_setup_message(
             f"  MSS:       {mss_line}\n"
             f"  Fibo:      {ote_line}\n"
             f"  Sesija:    {ses_line}\n"
+            + (f"\n📊 <b>VOLUME PROFILE (tik stebima, negatuoja):</b>\n{vp_line}" if vp_line else "")
         )
     else:
         setup_block = (

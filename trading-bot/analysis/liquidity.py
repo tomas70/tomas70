@@ -62,9 +62,77 @@ class Sweep:
 
 # ─── Daily Levels ─────────────────────────────────────────────────────────────
 
+def compute_volume_profile(df: pd.DataFrame, bins: int = 24) -> Optional[dict]:
+    """
+    Approximates a Fixed Range Volume Profile over `df`: POC (the price
+    level that traded the most volume) and VAH/VAL (the Value Area — the
+    contiguous band around POC holding ~70% of total volume, the standard
+    convention).
+
+    Evedex's candle API reports one volume figure per bar, not volume
+    broken down by price within the bar — that needs tick data, which
+    nothing here has access to. So each bar's volume is spread evenly
+    across its own [low, high] range into `bins` price buckets, the same
+    approximation most retail "Fixed Range Volume Profile" indicators use
+    without a premium tick feed. Treat POC/VAH/VAL as directional
+    reference levels, not exact ones.
+
+    Returns None when there's too little range or volume to bucket
+    meaningfully (a flat/near-flat window, or a data gap).
+    """
+    if df.empty or len(df) < 2:
+        return None
+
+    lo, hi = float(df["low"].min()), float(df["high"].max())
+    if hi <= lo:
+        return None
+
+    edges  = [lo + (hi - lo) * i / bins for i in range(bins + 1)]
+    volume = [0.0] * bins
+
+    for row in df.itertuples():
+        row_lo, row_hi, vol = float(row.low), float(row.high), float(row.volume)
+        if vol <= 0 or row_hi <= row_lo:
+            continue
+        span = row_hi - row_lo
+        for b in range(bins):
+            overlap = min(row_hi, edges[b + 1]) - max(row_lo, edges[b])
+            if overlap > 0:
+                volume[b] += vol * (overlap / span)
+
+    total = sum(volume)
+    if total <= 0:
+        return None
+
+    poc_i = max(range(bins), key=lambda b: volume[b])
+
+    # Value area: grow outward from POC, one bucket at a time, always
+    # taking whichever side (above/below the current band) carries more
+    # volume, until >=70% of total volume is enclosed.
+    lo_i = hi_i = poc_i
+    covered = volume[poc_i]
+    target  = total * 0.70
+    while covered < target and (lo_i > 0 or hi_i < bins - 1):
+        below = volume[lo_i - 1] if lo_i > 0 else -1.0
+        above = volume[hi_i + 1] if hi_i < bins - 1 else -1.0
+        if above >= below:
+            hi_i += 1
+            covered += volume[hi_i]
+        else:
+            lo_i -= 1
+            covered += volume[lo_i]
+
+    return {
+        "poc": round((edges[poc_i] + edges[poc_i + 1]) / 2, 8),
+        "vah": round(edges[hi_i + 1], 8),
+        "val": round(edges[lo_i], 8),
+    }
+
+
 def get_previous_day_range(df: pd.DataFrame) -> Optional[dict]:
     """
-    Previous UTC day's high and low, derived from intraday candles.
+    Previous UTC day's high, low, and approximate volume profile (POC/VAH/
+    VAL — see compute_volume_profile), derived from intraday candles.
 
     Returns None when the DataFrame doesn't reach back far enough to
     contain a complete prior day (CANDLES_LIMIT=200 on 15m is ~50h, so
@@ -82,11 +150,15 @@ def get_previous_day_range(df: pd.DataFrame) -> Optional[dict]:
 
     prev_day  = days[days < today].iloc[-1]
     prev_bars = df[days == prev_day]
+    profile   = compute_volume_profile(prev_bars)
 
     return {
         "high": float(prev_bars["high"].max()),
         "low":  float(prev_bars["low"].min()),
         "date": str(prev_day),
+        "poc":  profile["poc"] if profile else None,
+        "vah":  profile["vah"] if profile else None,
+        "val":  profile["val"] if profile else None,
     }
 
 
