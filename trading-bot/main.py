@@ -249,6 +249,12 @@ def handle_command(command: str, args: list[str]) -> str:
             lines.append(f"  Su OB:  {fmt(by_ob['with_ob'])}")
             lines.append(f"  Be OB:  {fmt(by_ob['without_ob'])}")
 
+        by_fvg = s.get("by_fvg", {})
+        if by_fvg.get("with_fvg", {}).get("count") or by_fvg.get("without_fvg", {}).get("count"):
+            lines.append("\n<b>FVG confluence:</b>")
+            lines.append(f"  Su FVG:  {fmt(by_fvg['with_fvg'])}")
+            lines.append(f"  Be FVG:  {fmt(by_fvg['without_fvg'])}")
+
         by_tier = s.get("by_tier", {})
         if by_tier.get("major", {}).get("count") or by_tier.get("micro", {}).get("count"):
             major_names = ", ".join(sorted(MAJOR_PAIRS))

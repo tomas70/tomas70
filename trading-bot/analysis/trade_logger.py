@@ -419,6 +419,16 @@ def get_stats(all_time: bool = False) -> dict:
     ob_no  = [r for r in resolved if str(r.get("ob_confluence")) == "False"]
     by_ob  = {"with_ob": summarize(ob_yes), "without_ob": summarize(ob_no)}
 
+    # sweep_has_fvg has been logged since the SWEEP setup shipped, but never
+    # had its own breakdown — entry is FVG retest when one exists, the swept
+    # level itself when it doesn't (see multi_timeframe._try_sweep_setup),
+    # so this answers directly whether the FVG-retest entries are actually
+    # earning their extra precision or whether the plainer level-retest
+    # entries do just as well.
+    fvg_yes = [r for r in resolved if str(r.get("sweep_has_fvg")) == "True"]
+    fvg_no  = [r for r in resolved if str(r.get("sweep_has_fvg")) == "False"]
+    by_fvg  = {"with_fvg": summarize(fvg_yes), "without_fvg": summarize(fvg_no)}
+
     major = [r for r in resolved if r["pair"] in MAJOR_PAIRS]
     micro = [r for r in resolved if r["pair"] not in MAJOR_PAIRS]
     by_tier = {"major": summarize(major), "micro": summarize(micro)}
@@ -439,6 +449,7 @@ def get_stats(all_time: bool = False) -> dict:
         "by_type":       by_type,
         "by_rr":         by_rr,
         "by_ob":         by_ob,
+        "by_fvg":        by_fvg,
         "by_tier":       by_tier,
         "all_time":      all_time,
         "epoch":         STRATEGY_EPOCH,
