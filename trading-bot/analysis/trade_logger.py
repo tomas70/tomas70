@@ -61,6 +61,12 @@ COLUMNS = [
     # in the same units as tp1_pct/sl_pct, so it can be compared directly
     # against the 2% target rather than admired in isolation.
     "funding_hourly", "funding_carry_pct_48h", "oi_usd",
+    # Approximate Fixed Range Volume Profile over the consolidation the
+    # sweep broke out of (see liquidity.compute_volume_profile). Recorded
+    # to test the AMD-model claim that an entry near POC (rather than
+    # wherever the FVG happens to sit) resolves better — not gated on yet.
+    # Blank on HOOK rows, same as the sweep_* columns.
+    "vp_poc", "vp_vah", "vp_val",
     "status", "outcome_at", "outcome_candles",
 ]
 
@@ -142,6 +148,7 @@ def log_setup(result: dict) -> None:
     mss   = (ict or {}).get("mss") or {}
     ote   = (ict or {}).get("ote") or {}
     perp  = result.get("perp_context") or {}
+    vp    = result.get("volume_profile") or {}
     row = {
         "id":               str(uuid.uuid4())[:8],
         "logged_at":        datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -178,6 +185,9 @@ def log_setup(result: dict) -> None:
         "funding_hourly":        perp.get("funding_hourly", ""),
         "funding_carry_pct_48h": perp.get("funding_carry_pct_48h", ""),
         "oi_usd":                perp.get("oi_usd", ""),
+        "vp_poc":           vp.get("poc", ""),
+        "vp_vah":           vp.get("vah", ""),
+        "vp_val":           vp.get("val", ""),
         "status":           "pending",
         "outcome_at":       "",
         "outcome_candles":  "",
