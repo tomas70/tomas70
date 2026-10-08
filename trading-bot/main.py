@@ -42,7 +42,7 @@ from notifications.bot_commands import listen_for_commands
 from risk.position_sizer import get_current_level, get_position_summary
 from analysis.pair_selection import get_liquid_pairs
 from analysis.paper_tracker import format_report as paper_report, update as paper_update
-from config import SCAN_INTERVAL_MINUTES, MIN_CONFIDENCE_SCORE
+from config import SCAN_INTERVAL_MINUTES, MIN_CONFIDENCE_SCORE, SETUP_ALERTS_ENABLED
 
 logging.basicConfig(
     level=logging.INFO,
@@ -84,6 +84,11 @@ def scan_markets(silent: bool = False) -> str:
     Scans all pairs. Sends best setup to Telegram if found.
     Returns a short status string (used by /scan command reply).
     """
+    if not SETUP_ALERTS_ENABLED:
+        logger.info("SWEEP skeneris išjungtas (config.SETUP_ALERTS_ENABLED=False)")
+        return ("⏸ SWEEP signalai išjungti — tyrimai neparodė edge. "
+                "Aktyvus tik paper tracker (/paper).")
+
     try:
         balance = get_account_balance()
     except AccountNotConfigured as exc:

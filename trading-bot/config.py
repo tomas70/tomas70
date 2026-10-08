@@ -26,6 +26,14 @@ EVEDEX_API_KEY: str = os.getenv("EVEDEX_API_KEY", "")
 # well be sound while the stop placement is what keeps failing.
 HOOK_SETUP_ENABLED: bool = False
 
+# Master switch for the SWEEP/HOOK setup scanner and its Telegram alerts.
+# Turned off after the research record (research/*.md): SWEEP, POC/VA
+# reactions, alt momentum and 4H-bias pullbacks all measured ~0 gross edge
+# on proper data, so the alerts only encouraged trading without one. The
+# scanner code stays until the BTC T50 paper tracker has fired its first
+# signal; the full bot is archived at git tag archive/sweep-bot.
+SETUP_ALERTS_ENABLED: bool = False
+
 # Cutoff for /log statistics: rows logged before this are excluded from the
 # DEFAULT (epoch-filtered) view. Bump this to "now" whenever a change to
 # setup detection/gating logic ships — trade_log.csv accumulates forever, so
