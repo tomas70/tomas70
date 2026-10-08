@@ -71,3 +71,16 @@ def test_summarize_net_of_fee():
     s = summarize(res, fee_pct=0.08)   # fee = 0.16R at 0.5% risk
     assert s["n"] == 2 and s["win_rate"] == 50.0
     assert s["gross_R"] == 1.5 and s["net_R"] == 1.34 and s["pending"] == 1
+
+
+def test_fixed_r_target_keeps_wide_stop_rows():
+    # 2% risk: fixed-percent TP is gated out (R:R 1), a 2R target is not.
+    wide = _c([(100, 100.5, 99.9), (100, 104.5, 99.9)])
+    assert market_entry_walk(wide, "bullish", 98.0)["status"] == "low_rr"
+    r = market_entry_walk(wide, "bullish", 98.0, tp_r=2.0)   # tp 104
+    assert r["status"] == "tp1_hit" and r["r"] == 2.0
+
+
+def test_fixed_r_bearish_sl():
+    r = market_entry_walk(_c([(100, 101.5, 99.9)]), "bearish", 101.0, tp_r=2.0)
+    assert r["status"] == "sl_hit"
