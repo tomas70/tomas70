@@ -48,6 +48,7 @@ FILES=(
     run_main.sh
     diagnose_rr.py
     optimize_tp.py
+    replay_market_entry.py
     setup_autostart.sh
     analysis/__init__.py
     analysis/market_data.py
