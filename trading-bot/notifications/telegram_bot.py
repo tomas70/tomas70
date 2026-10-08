@@ -83,7 +83,6 @@ def format_setup_message(
     tp1_stale      = setup.get("tp1_stale", False)
     tp1_age        = setup.get("tp1_age_4h")
 
-    level_num = level_info.get("level", 1)
     balance   = level_info.get("balance", 0)
 
     # Cap the displayed confidence when TP1 isn't a fresh structural level —
@@ -210,7 +209,7 @@ def format_setup_message(
         f"  R:R  =  1:{rr:.1f}\n"
         f"{funding_line}"
         f"\n"
-        f"💼 <b>RIZIKA</b> (Level {level_num} | ${balance}):\n"
+        f"💼 <b>RIZIKA</b> (balansas ${balance}):\n"
         f"  Rizika:    ${risk_usd:.2f} (30%)\n"
         f"  Notional:  ~${pos_usd:.0f}\n"
         f"  Leverage:  {leverage:.0f}x\n"
