@@ -195,7 +195,7 @@ def handle_command(command: str, args: list[str]) -> str:
             "/status — balansas, lygis ir sandorių statistika (iš Evedex)\n"
             "/positions — atviros pozicijos + laikyti/peržiūrėti rekomendacija\n"
             "/log — bot'o alertų statistika (skirtinga nuo /status — žr. žemiau)\n"
-            "/paper — paper portfelis: BTC trend + MOM14 krepšelis ($100)\n"
+            "/paper — paper portfelis: BTC trend T50 ($100)\n"
             "/ict — MSS / Fibo OTE / sesijos / funding pjūviai\n"
             "/help — ši pagalba\n\n"
             "<i>Balansas ir sandoriai imami tiesiogiai iš Evedex — nieko "
