@@ -277,6 +277,26 @@ def get_ohlcv(
         raise
 
 
+def get_candles_since(pair: str, timeframe: str, since: datetime) -> pd.DataFrame:
+    """
+    Candles for `pair` from `since` (timezone-aware) up to now, bypassing
+    get_ohlcv's 14-minute cache and its fixed CANDLES_LIMIT window.
+
+    For callers that need history past what a scan normally holds —
+    trade_logger.restate_fills re-walks week-old setups, and ~200 bars of
+    15m (about 50h) would not reach back to where they were logged. Not
+    cached on purpose: it would replace the cache entry the scanner reads
+    with a much longer frame, and nothing here is on the hot path.
+    """
+    if timeframe not in SUPPORTED_TIMEFRAMES:
+        raise ValueError(f"Unsupported timeframe: {timeframe}. Allowed: {SUPPORTED_TIMEFRAMES}")
+
+    interval_ms = _GROUP_MS.get(timeframe, 15 * 60_000)
+    span_ms     = (datetime.now(timezone.utc) - since).total_seconds() * 1000
+    limit       = max(int(span_ms // interval_ms) + 2, 2)
+    return _fetch_from_evedex(pair, timeframe, limit)
+
+
 def get_current_price(pair: str) -> float:
     """Latest mid price (best bid/ask average) from the Evedex order book — no API key required."""
     book = get_order_book(pair, max_level=1)
