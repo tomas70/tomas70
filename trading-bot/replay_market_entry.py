@@ -20,7 +20,7 @@ Per logged row (current STRATEGY_EPOCH, status irrelevant):
              expired trades count 0R
   * costs  = ROUND_TRIP_FEE_PCT of notional charged per trade, shown as net R
 
-Run from trading-bot/:  python replay_market_entry.py [fee_pct]
+Run from trading-bot/:  .venv/bin/python replay_market_entry.py [fee_pct] [--all]
 Needs the real trade_log.csv and Evedex access (run it where the bot runs).
 """
 import math
@@ -126,8 +126,14 @@ def main() -> None:
     from analysis import trade_logger as tl
     from analysis.market_data import get_candles_since
 
-    fee_pct = float(sys.argv[1]) if len(sys.argv) > 1 else ROUND_TRIP_FEE_PCT
-    epoch   = datetime.fromisoformat(STRATEGY_EPOCH)
+    args    = [a for a in sys.argv[1:] if not a.startswith("--")]
+    use_all = "--all" in sys.argv
+    fee_pct = float(args[0]) if args else ROUND_TRIP_FEE_PCT
+    # --all: include rows from before STRATEGY_EPOCH (SWEEP only — HOOK is a
+    # different setup). SL is structural and independent of the entry rule
+    # that changed at the epoch, so the market-entry replay is still valid.
+    epoch   = datetime.fromisoformat("2000-01-01T00:00:00+00:00") if use_all \
+              else datetime.fromisoformat(STRATEGY_EPOCH)
 
     rows = []
     for r in tl._read_rows():
@@ -135,6 +141,8 @@ def main() -> None:
             logged = datetime.fromisoformat(r["logged_at"])
             float(r["sl"])
         except (TypeError, ValueError):
+            continue
+        if use_all and r.get("entry_type") != "SWEEP":
             continue
         if logged >= epoch:
             rows.append((r, logged))
@@ -166,7 +174,8 @@ def main() -> None:
                     market_entry_walk(after, r["bias"], float(r["sl"]), delay=d, tp_r=k))
 
     resolved_limit = [r for r, _ in rows if r["status"] in ("tp1_hit", "sl_hit", "expired")]
-    print(f"Epocha nuo {STRATEGY_EPOCH[:10]} | eilučių: {len(rows)} | fee {fee_pct}% round-trip\n")
+    scope = "VISA istorija (SWEEP)" if use_all else f"Epocha nuo {STRATEGY_EPOCH[:10]}"
+    print(f"{scope} | eilučių: {len(rows)} | fee {fee_pct}% round-trip\n")
     for d in DELAYS:
         s = summarize(results[d], fee_pct)
         label = "iškart (kita žvakė)" if d == 0 else "+1 žvakė (≤15 min vėliau)"
