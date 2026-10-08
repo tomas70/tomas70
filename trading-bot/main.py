@@ -286,8 +286,6 @@ def handle_command(command: str, args: list[str]) -> str:
         except Exception as exc:
             return f"⚠️ Nepavyko gauti balanso iš Evedex: {exc}"
 
-        level_info = get_current_level(balance)
-
         try:
             positions = get_closed_positions(lookback_days=30)
             summary   = summarize_trades(positions)
@@ -303,11 +301,7 @@ def handle_command(command: str, args: list[str]) -> str:
 
         return (
             f"📊 <b>Account Status</b>  <i>(gyvai iš Evedex)</i>\n\n"
-            f"Level:     {level_info['level']} / 30\n"
-            f"Balansas:  <b>${balance:.2f}</b>\n"
-            f"Tikslas:   ${level_info['next_level_balance']:.2f} "
-            f"(dar ${level_info['remaining_profit']:.2f})\n"
-            f"Progress:  {level_info['progress_pct']:.0f}%\n\n"
+            f"Balansas:  <b>${balance:.2f}</b>\n\n"
             f"{trade_line}"
         )
 
