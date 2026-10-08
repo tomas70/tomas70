@@ -35,6 +35,7 @@ from config import MIN_RR_RATIO, STRATEGY_EPOCH, TP1_FIXED_PCT
 MAX_CANDLES = 192
 ROUND_TRIP_FEE_PCT = 0.08   # % of notional, entry + exit; override via argv[1]
 DELAYS = (0, 1)
+R_TARGETS = (1.5, 2.0, 3.0)   # fixed in advance; not tuned to the data
 
 
 def market_entry_walk(
@@ -45,12 +46,18 @@ def market_entry_walk(
     tp_pct: float = TP1_FIXED_PCT,
     min_rr: float = MIN_RR_RATIO,
     max_candles: int = MAX_CANDLES,
+    tp_r: Optional[float] = None,
 ) -> dict:
     """
     `after` = candles strictly after the signal, oldest first. Returns a dict:
       status  "tp1_hit" | "sl_hit" | "expired" | "pending" | "invalid" | "low_rr"
       r       gross R (None unless resolved)
       risk_pct stop distance as a fraction of entry (None if invalid)
+
+    tp_r: if given, TP1 sits tp_r x the stop distance from entry (a fixed-R
+    target) instead of tp_pct from entry, and the min_rr gate is skipped —
+    R:R is tp_r by construction. This keeps every row in play, where the
+    fixed-percent target drops any setup whose stop is wide at market price.
     """
     if len(after) <= delay:
         return {"status": "pending", "r": None, "risk_pct": None}
@@ -63,11 +70,14 @@ def market_entry_walk(
     if risk <= 0 or entry <= 0:       # price already through the stop
         return {"status": "invalid", "r": None, "risk_pct": None}
     risk_pct = risk / entry
-    rr = tp_pct / risk_pct
-    if rr < min_rr:
-        return {"status": "low_rr", "r": None, "risk_pct": risk_pct}
-
-    tp = entry * (1 + tp_pct) if bullish else entry * (1 - tp_pct)
+    if tp_r is not None:
+        rr = tp_r
+        tp = entry + tp_r * risk if bullish else entry - tp_r * risk
+    else:
+        rr = tp_pct / risk_pct
+        if rr < min_rr:
+            return {"status": "low_rr", "r": None, "risk_pct": risk_pct}
+        tp = entry * (1 + tp_pct) if bullish else entry * (1 - tp_pct)
 
     for _, c in start.iloc[:max_candles].iterrows():
         sl_hit = c["low"] <= sl if bullish else c["high"] >= sl
@@ -143,6 +153,7 @@ def main() -> None:
             print(f"! {pair}: nepavyko gauti žvakių ({exc})")
 
     results: dict[int, list[dict]] = {d: [] for d in DELAYS}
+    fixed_r: dict[tuple[int, float], list[dict]] = {(d, k): [] for d in DELAYS for k in R_TARGETS}
     for r, logged in rows:
         df = candles.get(r["pair"])
         if df is None or df.empty:
@@ -150,6 +161,9 @@ def main() -> None:
         after = df[df["timestamp"] > pd.Timestamp(logged)].reset_index(drop=True)
         for d in DELAYS:
             results[d].append(market_entry_walk(after, r["bias"], float(r["sl"]), delay=d))
+            for k in R_TARGETS:
+                fixed_r[(d, k)].append(
+                    market_entry_walk(after, r["bias"], float(r["sl"]), delay=d, tp_r=k))
 
     resolved_limit = [r for r, _ in rows if r["status"] in ("tp1_hit", "sl_hit", "expired")]
     print(f"Epocha nuo {STRATEGY_EPOCH[:10]} | eilučių: {len(rows)} | fee {fee_pct}% round-trip\n")
@@ -162,6 +176,15 @@ def main() -> None:
         print(f"  expectancy: {s['gross_R']}R bruto | {s['net_R']}R po fee")
         print(f"  praleista: R:R<{MIN_RR_RATIO} {s['low_rr']}, SL jau pramuštas {s['invalid']}, "
               f"dar nesprendžiasi {s['pending']}\n")
+    print("MARKET įėjimas, TP = k × realus stop (visos eilutės, be R:R filtro):")
+    for d in DELAYS:
+        for k in R_TARGETS:
+            s = summarize(fixed_r[(d, k)], fee_pct)
+            be = round(100 / (1 + k), 1)   # breakeven win rate before fees
+            print(f"  delay {d} | TP {k}R | n {s['n']} | win {s['win_rate']}% "
+                  f"(CI {s['ci'][0]}–{s['ci'][1]}%, breakeven {be}%) | "
+                  f"{s['gross_R']}R bruto, {s['net_R']}R po fee")
+    print()
     print(f"Palyginimui — limit prie lygio (iš loga): užpildyta {len(resolved_limit)} iš {len(rows)}")
 
 
