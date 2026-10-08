@@ -63,6 +63,7 @@ FILES=(
     analysis/trade_logger.py
     analysis/evedex_account.py
     analysis/position_tracker.py
+    analysis/paper_tracker.py
     analysis/liquidity_walls.py
     analysis/pair_selection.py
     ai/__init__.py
@@ -112,7 +113,7 @@ else
     if (cd "$DIR" && "$VENV_PY" -c "
 import analysis.market_data, analysis.smc, analysis.ross_hook
 import analysis.multi_timeframe, analysis.global_trend, analysis.liquidity
-import analysis.trade_logger, analysis.evedex_account, analysis.position_tracker, analysis.liquidity_walls
+import analysis.trade_logger, analysis.evedex_account, analysis.position_tracker, analysis.paper_tracker, analysis.liquidity_walls
 import analysis.pair_selection, analysis.ict, analysis.ict_stats, analysis.market_context
 import ai.claude_analyst, notifications.telegram_bot, notifications.bot_commands
 import risk.position_sizer

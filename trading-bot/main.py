@@ -41,6 +41,7 @@ from notifications.telegram_bot import format_setup_message, send_telegram
 from notifications.bot_commands import listen_for_commands
 from risk.position_sizer import get_current_level, get_position_summary
 from analysis.pair_selection import get_liquid_pairs
+from analysis.paper_tracker import format_report as paper_report, update as paper_update
 from config import SCAN_INTERVAL_MINUTES, MIN_CONFIDENCE_SCORE
 
 logging.basicConfig(
@@ -173,6 +174,15 @@ def scan_markets(silent: bool = False) -> str:
         return f"🔍 Skenuota {len(pairs)} porų. Nėra setup'ų. FLAT.\n\n{summary}"
 
 
+def paper_job() -> None:
+    """Advance the forward paper portfolios (daily data) and announce events."""
+    try:
+        for msg in paper_update():
+            send_telegram(msg)
+    except Exception as exc:
+        logger.warning("paper tracker: %s", exc)
+
+
 # ─── Telegram command handler ─────────────────────────────────────────────────
 
 def handle_command(command: str, args: list[str]) -> str:
@@ -185,11 +195,16 @@ def handle_command(command: str, args: list[str]) -> str:
             "/status — balansas, lygis ir sandorių statistika (iš Evedex)\n"
             "/positions — atviros pozicijos + laikyti/peržiūrėti rekomendacija\n"
             "/log — bot'o alertų statistika (skirtinga nuo /status — žr. žemiau)\n"
+            "/paper — paper portfelis: BTC trend + MOM14 krepšelis ($100)\n"
             "/ict — MSS / Fibo OTE / sesijos / funding pjūviai\n"
             "/help — ši pagalba\n\n"
             "<i>Balansas ir sandoriai imami tiesiogiai iš Evedex — nieko "
             "įvesti rankiniu būdu nereikia.</i>"
         )
+
+    if command == "/paper":
+        paper_job()
+        return paper_report()
 
     if command == "/scan":
         return "🔄 Skenuoju rinkas...\n\n" + scan_markets(silent=True)
@@ -363,11 +378,13 @@ def main() -> None:
                 SCAN_INTERVAL_MINUTES)
 
     scan_markets()  # immediate first scan
+    paper_job()
 
     # Scheduler runs in its own thread — schedule setup must happen inside
     # the same thread that calls run_pending() (thread safety).
     def _scheduler_loop() -> None:
         schedule.every(SCAN_INTERVAL_MINUTES).minutes.do(scan_markets)
+        schedule.every(30).minutes.do(paper_job)
         while True:
             schedule.run_pending()
             time.sleep(60)
