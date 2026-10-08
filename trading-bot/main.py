@@ -229,7 +229,15 @@ def handle_command(command: str, args: list[str]) -> str:
             "📋 <b>Trade Log</b>",
             scope_note + "\n",
             f"Iš viso: {s['total']} setup'ų  |  Laukia: {s['pending']}",
-            f"Išspręsta: {s['resolved']}  →  TP1: {s['tp1_hit']}  SL: {s['sl_hit']}  Expired: {s['expired']}",
+            f"Užpildyta: {s['resolved']}  →  TP1: {s['tp1_hit']}  SL: {s['sl_hit']}  Expired: {s['expired']}",
+        ]
+        if s.get("missed") or s.get("unfilled"):
+            lines.append(
+                f"<b>Limit fill rate: {s['fill_rate']:.1f}%</b>  "
+                f"(praleista: {s['missed']} — TP1 be fill'o, nesuveikė: {s['unfilled']})"
+            )
+            lines.append("<i>Win rate/expectancy skaičiuoja tik užpildytus sandorius.</i>")
+        lines += [
             f"<b>Win rate: {wr}</b>  (atsitiktinumo riba: {bl}, edge: {edge})",
             f"<b>Expectancy: {exp}/sandoriui</b>",
             "<i>Atsitiktinumo riba = ką duotų grynas monetos metimas prie to paties R:R.\n"

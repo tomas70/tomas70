@@ -11,6 +11,7 @@ RR bands actually correlate with TP1 hits in live market conditions.
 """
 import csv
 import logging
+import shutil
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -18,7 +19,7 @@ from typing import Optional
 
 import pandas as pd
 
-from .market_data import get_ohlcv
+from .market_data import get_candles_since, get_ohlcv
 from config import STRATEGY_EPOCH
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,11 @@ COLUMNS = [
     # Blank on HOOK rows, same as the sweep_* columns.
     "vp_poc", "vp_vah", "vp_val",
     "status", "outcome_at", "outcome_candles",
+    # 1-based 15m candle (counted from logged_at) on which the resting limit
+    # order at `entry` first traded. Blank on rows that never filled
+    # (status missed/unfilled) and on rows resolved before fill modeling
+    # existed — restate_fills() backfills the latter.
+    "fill_candles",
 ]
 
 
@@ -249,12 +255,195 @@ def simulate_walk(
     return None, None, None  # not enough forward data yet
 
 
+def simulate_limit_walk(
+    df: pd.DataFrame,
+    logged_at: datetime,
+    bias: str,
+    entry: float,
+    tp: float,
+    sl: float,
+    max_candles: int = MAX_OUTCOME_CANDLES,
+) -> tuple[Optional[str], Optional[str], Optional[int], Optional[int]]:
+    """
+    simulate_walk for a trader who enters ONLY with a resting limit order at
+    `entry` — which is how this system is actually traded.
+
+    simulate_walk never asked whether price came back to `entry`: it scored
+    TP1 the moment it traded, even when the market ran straight there
+    without ever touching the level. For a limit order that is not a win,
+    it is a trade that never happened — and since entry is the swept level,
+    which sits behind price once the displacement has gone, those runaways
+    are the strongest moves, exactly where a win rate gets inflated.
+
+    Returns (status, outcome_at, candles, fill_candles):
+
+      tp1_hit / sl_hit / expired
+          The limit filled, then resolved as simulate_walk would have.
+      missed
+          TP1 traded before the limit ever did. No trade; a winner that
+          ran without us. Kept apart from "unfilled" because it measures
+          what limit-only entry costs, which is a different thing from a
+          setup that simply went nowhere.
+      unfilled
+          The window ended with neither entry nor TP1 touched. No trade.
+      None
+          Not enough forward data yet — still pending.
+
+    fill_candles is the 1-based candle the order filled on (None if it
+    never did).
+
+    Candle-order conventions, each the pessimistic side where intra-candle
+    order is unknowable:
+      * The fill candle can stop out (to reach a long's SL price must pass
+        through entry first, so fill-then-stop is the only possible order),
+        but TP1 on that same candle is NOT credited — whether the high came
+        before or after the dip to entry can't be told from OHLC.
+      * After the fill, a candle touching both TP and SL credits TP, same
+        as simulate_walk.
+    """
+    after = df[df["timestamp"] > pd.Timestamp(logged_at)].reset_index(drop=True)
+    if after.empty:
+        return None, None, None, None
+
+    bullish = bias == "bullish"
+    fill_candles: Optional[int] = None
+
+    for idx, candle in after.iloc[:max_candles].iterrows():
+        n      = int(idx) + 1
+        ts     = str(candle["timestamp"])
+        tp_hit = candle["high"] >= tp if bullish else candle["low"] <= tp
+        sl_hit = candle["low"]  <= sl if bullish else candle["high"] >= sl
+
+        if fill_candles is None:
+            touched = candle["low"] <= entry if bullish else candle["high"] >= entry
+            if not touched:
+                if tp_hit:
+                    return "missed", ts, n, None
+                continue
+            fill_candles = n
+            if sl_hit:
+                return "sl_hit", ts, n, fill_candles
+            continue
+
+        if tp_hit or sl_hit:
+            return ("tp1_hit" if tp_hit else "sl_hit"), ts, n, fill_candles
+
+    if len(after) >= max_candles:
+        window = min(len(after), max_candles)
+        ts     = str(after.iloc[window - 1]["timestamp"])
+        return ("expired" if fill_candles is not None else "unfilled"), ts, window, fill_candles
+
+    return None, None, None, fill_candles
+
+
+# Rows older than this are never restated: restate_fills fetches candle
+# history back to the oldest row it touches, and a stale epoch should not
+# turn a routine scan into a month-long download.
+RESTATE_MAX_DAYS = 30
+_FILLED_STATUSES = ("tp1_hit", "sl_hit", "expired")
+
+
+def restate_fills() -> int:
+    """
+    One-time, idempotent restatement of rows resolved BEFORE fill modeling:
+    re-walks each one with simulate_limit_walk and corrects its status.
+
+    Without this, the fill logic would only apply to rows logged from now
+    on, and /log would show a "true" fill rate built on a handful of new
+    rows while the week of trades already in the log kept their inflated
+    outcomes. A row that was scored tp1_hit by simulate_walk but whose
+    entry never traded becomes `missed`; one that never filled and never
+    reached TP1 becomes `unfilled`; the rest keep their status and just
+    gain fill_candles.
+
+    Targets rows in the current epoch (and within RESTATE_MAX_DAYS) with a
+    filled-style status and a blank fill_candles. Rewriting someone's trade
+    history is the one thing here that can't be undone by a redeploy, so
+    the log is copied to trade_log.pre-fill-restate.csv first (never
+    overwritten once it exists). A row it can't resolve from the candles
+    available is left untouched and retried on the next scan.
+
+    Returns the number of rows restated.
+    """
+    cutoff = max(
+        datetime.fromisoformat(STRATEGY_EPOCH),
+        datetime.now(timezone.utc) - timedelta(days=RESTATE_MAX_DAYS),
+    )
+
+    rows = _read_rows()
+    targets: list[tuple[dict, datetime]] = []
+    for r in rows:
+        if r["status"] not in _FILLED_STATUSES or r.get("fill_candles"):
+            continue
+        try:
+            logged = datetime.fromisoformat(r["logged_at"])
+            float(r["entry"]); float(r["sl"]); float(r["tp1"])
+        except (TypeError, ValueError):
+            continue
+        if logged >= cutoff:
+            targets.append((r, logged))
+    if not targets:
+        return 0
+
+    backup = LOG_FILE.with_name("trade_log.pre-fill-restate.csv")
+    if not backup.exists():
+        shutil.copy2(LOG_FILE, backup)
+        logger.info("trade_log: backed up to %s before restating fills", backup.name)
+
+    earliest: dict[str, datetime] = {}
+    for r, logged in targets:
+        if r["pair"] not in earliest or logged < earliest[r["pair"]]:
+            earliest[r["pair"]] = logged
+
+    df_by_pair: dict[str, pd.DataFrame] = {}
+    for pair, since in earliest.items():
+        try:
+            df_by_pair[pair] = get_candles_since(pair, "15m", since - timedelta(minutes=30))
+        except Exception as exc:
+            logger.warning("trade_logger: cannot fetch %s history to restate — %s", pair, exc)
+
+    restated = 0
+    counts = {"missed": 0, "unfilled": 0}
+    for r, logged in targets:
+        df = df_by_pair.get(r["pair"])
+        if df is None or df.empty:
+            continue
+        status, outcome_at, candles, fill = simulate_limit_walk(
+            df, logged, r["bias"], float(r["entry"]), float(r["tp1"]), float(r["sl"]),
+        )
+        if status is None:
+            continue
+        r["status"]          = status
+        r["outcome_at"]      = outcome_at
+        r["outcome_candles"] = candles
+        r["fill_candles"]    = fill if fill is not None else ""
+        restated += 1
+        if status in counts:
+            counts[status] += 1
+
+    if restated:
+        _write_rows(rows)
+        logger.info(
+            "trade_log: restated %d rows for limit fills — %d missed (TP1 without a fill), "
+            "%d unfilled", restated, counts["missed"], counts["unfilled"],
+        )
+    return restated
+
+
 def update_all_pending_outcomes() -> int:
     """
-    Resolves pending log entries against the latest 15m candle data.
+    Resolves pending log entries against the latest 15m candle data, as a
+    resting limit order at `entry` (see simulate_limit_walk).
 
     Returns the number of rows resolved in this call.
     """
+    try:
+        restate_fills()
+    except Exception as exc:
+        # Restating is a repair of history, not part of resolving today's
+        # rows — a failure there must not stop the scan from doing its job.
+        logger.warning("trade_logger: restate_fills failed — %s", exc)
+
     rows = _read_rows()
     pending = [r for r in rows if r["status"] == "pending"]
     if not pending:
@@ -276,18 +465,26 @@ def update_all_pending_outcomes() -> int:
         if df is None or df.empty:
             continue
 
-        status, outcome_at, outcome_candles = simulate_walk(
-            df,
-            datetime.fromisoformat(row["logged_at"]),
-            row["bias"],
-            float(row["tp1"]),
-            float(row["sl"]),
-        )
+        logged_at = datetime.fromisoformat(row["logged_at"])
+        tp, sl    = float(row["tp1"]), float(row["sl"])
+        try:
+            entry = float(row["entry"])
+        except (TypeError, ValueError):
+            entry = None
+
+        if entry:
+            status, outcome_at, outcome_candles, fill = simulate_limit_walk(
+                df, logged_at, row["bias"], entry, tp, sl,
+            )
+        else:
+            status, outcome_at, outcome_candles = simulate_walk(df, logged_at, row["bias"], tp, sl)
+            fill = None
 
         if status:
             row["status"]          = status
             row["outcome_at"]      = outcome_at
             row["outcome_candles"] = outcome_candles
+            row["fill_candles"]    = fill if fill is not None else ""
             resolved += 1
             logger.info(
                 "Outcome: %s %s → %s (%s bars)", row["pair"], row["bias"], status, outcome_candles
@@ -384,6 +581,14 @@ def get_stats(all_time: bool = False) -> dict:
 
     resolved = [r for r in rows if r["status"] in ("tp1_hit", "sl_hit", "expired")]
     pending  = [r for r in rows if r["status"] == "pending"]
+    missed   = [r for r in rows if r["status"] == "missed"]
+    unfilled = [r for r in rows if r["status"] == "unfilled"]
+
+    # Entries are resting limit orders at the swept level: a setup whose
+    # price never came back to it isn't a trade. Win rate/expectancy below
+    # count filled trades only; fill_rate says how many setups got filled.
+    decided   = len(resolved) + len(missed) + len(unfilled)
+    fill_rate = round(len(resolved) / decided * 100, 1) if decided else None
 
     def win_rate(subset: list[dict]) -> Optional[float]:
         if not subset:
@@ -439,7 +644,11 @@ def get_stats(all_time: bool = False) -> dict:
         "total":         len(rows),
         "pending":       len(pending),
         "resolved":      len(resolved),
-        "tp1_hit":       sum(1 for r in resolved if r["status"] == "tp1_hit"),
+        "filled":        len(resolved),
+        "missed":        len(missed),
+        "unfilled":      len(unfilled),
+        "fill_rate":     fill_rate,
+        "tp1_hit":      sum(1 for r in resolved if r["status"] == "tp1_hit"),
         "sl_hit":        sum(1 for r in resolved if r["status"] == "sl_hit"),
         "expired":       sum(1 for r in resolved if r["status"] == "expired"),
         "win_rate":      overall["win_rate"],
