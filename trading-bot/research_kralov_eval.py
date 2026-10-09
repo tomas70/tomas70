@@ -20,9 +20,9 @@ FUND_PER_YEAR = 0.10
 MAX_BARS = 672                      # 7 days
 LIMIT_BARS = 12
 W = np.full(5, 0.2)
-THIRDS = [(pd.Timestamp("2026-05-03"), pd.Timestamp("2026-06-30 23:59")),
-          (pd.Timestamp("2026-07-01"), pd.Timestamp("2026-08-31 23:59")),
-          (pd.Timestamp("2026-09-01"), pd.Timestamp("2026-10-10"))]
+THIRDS = [(pd.Timestamp("2026-05-03", tz="UTC"), pd.Timestamp("2026-06-30 23:59", tz="UTC")),
+          (pd.Timestamp("2026-07-01", tz="UTC"), pd.Timestamp("2026-08-31 23:59", tz="UTC")),
+          (pd.Timestamp("2026-09-01", tz="UTC"), pd.Timestamp("2026-10-10", tz="UTC"))]
 NON_CRYPTO = {"SPYUSD", "TSLAUSD", "XAGUSD", "XAUTUSD", "CLUSD", "COINUSD", "MSTRUSD"}
 T_PASS, Z_PASS = 3.0, 3.0
 
@@ -164,7 +164,7 @@ def prepare(ledger: dict) -> list[dict]:
     sigs = []
     for s in ledger["signals"]:
         d = dict(s)
-        d["utc"] = pd.Timestamp(s["local_time"]) - pd.Timedelta(hours=UTC_OFFSET_H)
+        d["utc"] = pd.Timestamp(s["local_time"]).tz_localize("UTC") - pd.Timedelta(hours=UTC_OFFSET_H)
         sigs.append(d)
     by_inst: dict[str, list] = {}
     for s in sigs:
