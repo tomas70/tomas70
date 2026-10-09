@@ -37,44 +37,23 @@ fi
 
 echo "⬇️  Atnaujinami failai į $DIR ..."
 
-mkdir -p "$DIR/analysis" "$DIR/ai" "$DIR/notifications" "$DIR/risk" "$DIR/logs" "$DIR/tests"
+mkdir -p "$DIR/analysis" "$DIR/notifications" "$DIR/logs" "$DIR/tests"
 
 FILES=(
     main.py
-    mcp_server.py
     config.py
     requirements.txt
-    run_mcp.sh
     run_main.sh
-    diagnose_rr.py
-    optimize_tp.py
-    replay_market_entry.py
     setup_autostart.sh
     analysis/__init__.py
     analysis/market_data.py
-    analysis/smc.py
-    analysis/ross_hook.py
-    analysis/multi_timeframe.py
-    analysis/global_trend.py
-    analysis/liquidity.py
-    analysis/ict.py
-    analysis/ict_stats.py
-    analysis/market_context.py
-    analysis/trade_logger.py
     analysis/evedex_account.py
-    analysis/position_tracker.py
     analysis/paper_tracker.py
-    analysis/liquidity_walls.py
     analysis/pair_selection.py
-    ai/__init__.py
-    ai/claude_analyst.py
     notifications/__init__.py
     notifications/telegram_bot.py
     notifications/bot_commands.py
-    risk/__init__.py
-    risk/position_sizer.py
-    tests/test_ict.py
-    tests/test_ict_stats.py
+    tests/test_paper_tracker.py
 )
 
 FAILED=0
@@ -92,7 +71,7 @@ for f in "${FILES[@]}"; do
     fi
 done
 
-chmod +x "$DIR/run_mcp.sh" "$DIR/run_main.sh" "$DIR/setup_autostart.sh" 2>/dev/null || true
+chmod +x "$DIR/run_main.sh" "$DIR/setup_autostart.sh" 2>/dev/null || true
 
 echo "─────────────────────────────"
 
@@ -111,12 +90,9 @@ else
     # the check with "No module named 'analysis'" and refused to restart a
     # bot whose files were in fact fine.
     if (cd "$DIR" && "$VENV_PY" -c "
-import analysis.market_data, analysis.smc, analysis.ross_hook
-import analysis.multi_timeframe, analysis.global_trend, analysis.liquidity
-import analysis.trade_logger, analysis.evedex_account, analysis.position_tracker, analysis.paper_tracker, analysis.liquidity_walls
-import analysis.pair_selection, analysis.ict, analysis.ict_stats, analysis.market_context
-import ai.claude_analyst, notifications.telegram_bot, notifications.bot_commands
-import risk.position_sizer
+import analysis.market_data, analysis.evedex_account, analysis.paper_tracker, analysis.pair_selection
+import notifications.telegram_bot, notifications.bot_commands
+import main
 print('✅ visi moduliai importuojasi')
 "); then
         :

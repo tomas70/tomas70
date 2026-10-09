@@ -3,167 +3,35 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ── Optional credentials ──────────────────────────────────────────────────────
+# ── Credentials ───────────────────────────────────────────────────────────────
 TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID:   str = os.getenv("TELEGRAM_CHAT_ID",   "")
 
-# Anthropic API key: only needed for standalone mode (without Claude Desktop)
-ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
-
 # Evedex API key (read-only account access — created under Settings -> API
 # on the Evedex exchange). Sent as the x-api-key header on every private
-# request. Required for balance/status to work; the bot never signs or
+# request. Required for /status and /positions; the bot never signs or
 # places orders, so a read-only key is enough.
 EVEDEX_API_KEY: str = os.getenv("EVEDEX_API_KEY", "")
 
-# Ross Hook continuation setup. Disabled after it underperformed a coin flip
-# in every window measured: -7.2pp edge over 92 pre-epoch trades, then
-# -18.1pp (n=11) and -17.6pp (n=17) under the current rules, expectancy stuck
-# near -0.57R throughout, and the 6 trades added between the last two
-# readings went 1W/5L rather than reversing it. Kept as a flag, not deleted,
-# because the plan is to revisit it with an order-book-wall stop instead of
-# the OB-derived one (see analysis/liquidity_walls.py) — the entry signal may
-# well be sound while the stop placement is what keeps failing.
-HOOK_SETUP_ENABLED: bool = False
-
-# Master switch for the SWEEP/HOOK setup scanner and its Telegram alerts.
-# Turned off after the research record (research/*.md): SWEEP, POC/VA
-# reactions, alt momentum and 4H-bias pullbacks all measured ~0 gross edge
-# on proper data, so the alerts only encouraged trading without one. The
-# scanner code stays until the BTC T50 paper tracker has fired its first
-# signal; the full bot is archived at git tag archive/sweep-bot.
-SETUP_ALERTS_ENABLED: bool = False
-
-# Cutoff for /log statistics: rows logged before this are excluded from the
-# DEFAULT (epoch-filtered) view. Bump this to "now" whenever a change to
-# setup detection/gating logic ships — trade_log.csv accumulates forever, so
-# without a cutoff, stats permanently blend results from every past rule-set
-# with the current one, and a real improvement (or regression) gets diluted
-# into invisibility. Full unfiltered history is still available via /log all.
-#
-# Last bumped: SWEEP entry switched from the displacement's FVG (when one
-# existed) to the reclaimed level itself, always. by_fvg in get_stats()
-# made the comparison answerable over the first 109 logged trades: level-
-# only entries won clearly (83.0% win / +3.09R, n=88) over FVG entries
-# (71.4% / +1.25R, n=21). Every row before this timestamp was logged under
-# the old FVG-preferring entry rule.
-STRATEGY_EPOCH: str = "2026-09-30T12:21:09+00:00"
-
-# ── Pair selection ────────────────────────────────────────────────────────────
-# Scan every perp that is actually liquid right now instead of a fixed list.
-# A pair qualifies on EITHER metric: a market can be worth trading on strong
-# turnover with modest positioning open, or the reverse.
-#
-# Thresholds are 0 (i.e. no filter) rather than a Hyperliquid-sized number:
-# Evedex lists only 39 tradable crypto perps total (confirmed live), so a
-# 50M-style cutoff built for a market with hundreds of perps would leave 3-4
-# pairs standing instead of thinning an already-small set. All 39 fit well
-# under MAX_ACTIVE_PAIRS below, so there's nothing to filter for yet.
+# ── Pair selection (used by analysis/pair_selection.py) ──────────────────────
+# Scan every perp that is actually liquid right now. Evedex lists only a few
+# dozen tradable perps, so the thresholds are 0 (no filter).
 USE_DYNAMIC_PAIRS: bool = True
 MIN_DAY_VOLUME_USD: float    = 0   # 24h notional volume
 MIN_OPEN_INTEREST_USD: float = 0   # open interest, converted to USD
-
-# Hard cap on how many pairs a scan covers. Each pair costs 3 candle requests
-# every 15 minutes (15m/1h/4h), so this bounds both scan duration and the
-# request rate against Evedex — without it, a bull market that lifts 150
-# perps over the threshold would quietly turn one scan into 450 requests.
 MAX_ACTIVE_PAIRS: int = 60
 
 # Fallback list, used when USE_DYNAMIC_PAIRS is False or exchange metadata
-# can't be read. Kept as the known-good core rather than deleted.
-# Trading pairs — Evedex perpetual futures (coin symbol only; market_data
-# appends "USD" to get the instrument name, e.g. "BTC" -> "BTCUSD")
-# Selected for: high volume + TradFi presence (CME/ETF/institutional).
-# ADA and UNI dropped — not listed as Evedex instruments.
+# can't be read (coin symbol only; market_data appends "USD" for the
+# instrument name).
 PAIRS: list[str] = [
-    # Tier 1 — CME futures + ETF (IBIT, FBTC, ETHA...)
-    "BTC", "ETH", "SOL", "BNB", "XRP",
-    # Tier 2 — institutional + regulated, high open interest
-    "DOGE", "AVAX", "LINK", "DOT",
-    "LTC", "BCH", "ATOM", "NEAR", "SUI",
-    # Tier 3 — major DeFi + L2 + ecosystem
-    "APT", "ARB", "OP", "GRAM",
+    "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "AVAX", "LINK", "DOT",
+    "LTC", "BCH", "ATOM", "NEAR", "SUI", "APT", "ARB", "OP",
 ]
 
-# Timeframes fetched for every pair on every scan
+# ── Market data ───────────────────────────────────────────────────────────────
+# Timeframes market_data is allowed to fetch.
 TIMEFRAMES: list[str] = ["15m", "1h", "4h"]
-
-# Higher timeframe used for the global trend filter. Fetched lazily — only
-# for setups that already passed the cheaper 15m/4H/OB/RR gates — so a scan
-# adds a handful of requests, not one per pair.
 GLOBAL_TREND_TIMEFRAME: str = "1d"
-
-# Everything market_data is allowed to fetch (TIMEFRAMES + lazy ones)
 SUPPORTED_TIMEFRAMES: list[str] = [*TIMEFRAMES, GLOBAL_TREND_TIMEFRAME]
-
-# Pair whose trend defines the market-wide regime. Alts follow BTC closely,
-# so an alt long during a BTC downtrend fights the dominant flow.
-MARKET_LEADER_PAIR: str = "BTC"
-
-# Data settings
 CANDLES_LIMIT: int = 200
-SCAN_INTERVAL_MINUTES: int = 15
-
-# Risk management (hardcoded)
-RISK_PERCENTAGE: float = 0.30       # 30% of balance per trade
-# TP1 as a fixed fraction of entry price, replacing the 4H-swing target that
-# was the system's biggest single loser (reached 8.7% of the time in replay,
-# 4.3% live). Set inside the 1-2% band where replay was consistently
-# positive rather than at its best single point (2% scored highest at
-# +0.80R), because 12 target variants were tried against 23 trades and none
-# survives correction for that. 2% over 1% because trading costs eat a
-# proportionally smaller share of the larger target.
-TP1_FIXED_PCT: float = 0.02
-
-# Minimum Risk:Reward ratio. Lowered 3.0 -> 2.0 because TP1 is no longer a
-# swing that can sit arbitrarily far away: with a fixed 2% target, R:R is
-# just 2% / stop-width, which averaged ~2.45 across logged setups. Leaving
-# the gate at 3.0 would have rejected almost everything. Its meaning
-# changes accordingly — from "is the structure far enough to be worth it"
-# to "is the stop tight enough that 2% is worth the risk", which rejects
-# setups where the sweep ran so deep that risk is disproportionate.
-MIN_RR_RATIO: float = 2.0
-# 5 -> 20: a 30%-of-balance risk sized against a tight SWEEP stop (a few
-# tenths of a percent isn't unusual) was hitting the 5x cap and demanding
-# margin well past what a small account actually has — e.g. a real alert
-# with a 0.3% stop wanted ~$101 margin against a ~$6 balance. Raising the
-# cap lets position sizing use as much leverage as the setup's own stop
-# distance calls for before margin_ok (see risk/position_sizer.py) has to
-# flag it, instead of capping early and manufacturing an unaffordable size.
-LEVERAGE: int = 20                  # Max leverage
-MAX_OPEN_POSITIONS: int = 1
-MIN_CONFIDENCE_SCORE: int = 7
-
-# Challenge levels table: $20 → $40,000 over 30 levels
-CHALLENGE_LEVELS: list[dict] = [
-    {"level": 1,  "balance": 20,     "profit_goal": 6},
-    {"level": 2,  "balance": 26,     "profit_goal": 8},
-    {"level": 3,  "balance": 34,     "profit_goal": 10},
-    {"level": 4,  "balance": 44,     "profit_goal": 14},
-    {"level": 5,  "balance": 58,     "profit_goal": 18},
-    {"level": 6,  "balance": 76,     "profit_goal": 22},
-    {"level": 7,  "balance": 98,     "profit_goal": 28},
-    {"level": 8,  "balance": 126,    "profit_goal": 38},
-    {"level": 9,  "balance": 164,    "profit_goal": 48},
-    {"level": 10, "balance": 212,    "profit_goal": 64},
-    {"level": 11, "balance": 276,    "profit_goal": 82},
-    {"level": 12, "balance": 358,    "profit_goal": 142},
-    {"level": 13, "balance": 466,    "profit_goal": 142},
-    {"level": 14, "balance": 606,    "profit_goal": 182},
-    {"level": 15, "balance": 788,    "profit_goal": 236},
-    {"level": 16, "balance": 1024,   "profit_goal": 308},
-    {"level": 17, "balance": 1332,   "profit_goal": 400},
-    {"level": 18, "balance": 1732,   "profit_goal": 520},
-    {"level": 19, "balance": 2252,   "profit_goal": 674},
-    {"level": 20, "balance": 2926,   "profit_goal": 878},
-    {"level": 21, "balance": 3804,   "profit_goal": 1140},
-    {"level": 22, "balance": 4944,   "profit_goal": 1482},
-    {"level": 23, "balance": 6426,   "profit_goal": 1928},
-    {"level": 24, "balance": 8354,   "profit_goal": 2506},
-    {"level": 25, "balance": 10860,  "profit_goal": 3356},
-    {"level": 26, "balance": 14116,  "profit_goal": 4234},
-    {"level": 27, "balance": 18350,  "profit_goal": 5504},
-    {"level": 28, "balance": 23854,  "profit_goal": 7156},
-    {"level": 29, "balance": 31010,  "profit_goal": 9302},
-    {"level": 30, "balance": 40312,  "profit_goal": 12092},
-]
