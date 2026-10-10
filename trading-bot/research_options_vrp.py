@@ -24,15 +24,15 @@ MIN_POS_YEARS = 4
 
 # ── data ──────────────────────────────────────────────────────────────────
 
-def fetch_dvol(cache: Path) -> pd.Series:
-    f = cache / "dvol_btc_1d.pkl"
+def fetch_dvol(cache: Path, currency: str = "BTC") -> pd.Series:
+    f = cache / f"dvol_{currency.lower()}_1d.pkl"
     if f.exists():
         return pickle.loads(f.read_bytes())
     rows, start = {}, int(pd.Timestamp("2021-03-01", tz="UTC").timestamp() * 1000)
     end = int(pd.Timestamp.now(tz="UTC").timestamp() * 1000)
     while start < end:
         r = httpx.get(DERIBIT, timeout=30, params={
-            "currency": "BTC", "start_timestamp": start, "end_timestamp": end, "resolution": "1D"})
+            "currency": currency, "start_timestamp": start, "end_timestamp": end, "resolution": "1D"})
         r.raise_for_status()
         res = r.json()["result"]
         data = res["data"]
