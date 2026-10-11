@@ -86,3 +86,26 @@ nenurodyti slenksčiai).
 7 strategijos = 7 testai; 30 sandorių ir PF > 1.3 yra silpnas slenkstis,
 dalis „РАБОТАЕТ“ gali būti atsitiktinė. Strategijos sukurtos akcijoms, o
 testuojamos BTC — tai kitas instrumentas.
+
+---
+
+## Priedas (parašytas prieš akcijų testą): akcijų duomenys per IB
+
+Stooq nepasiekiamas (egress politika), todėl akcijų dienos žvakės paimtos per IB
+jungtį: SPY, NVDA, SAP (NYSE ADR), po 1000 dienos žvakių (2022-10-14 → 2026-10-09),
+failai `data/*_1d_ib.csv`. Kainos atrodo pakoreguotos splitams (NVDA didžiausias
+dienos šuolis 24% — pelno ataskaita, ne splitas). 15 eilučių, kur high/low šiek tiek
+neatitiko open/close (skirtingi duomenų šaltiniai), pataisyta: high = max(high, o, c),
+low = min(low, o, c). Dividendai nekoreguojami.
+
+- **Pagal lentelę nurodyti instrumentai (skaičiuojami kaip tikras testas):**
+  S3 → SPY (lentelė: S&P 500/ES/SPY, daily); S8 → NVDA ir SAP (lentelė: NVDA, SAP, daily).
+- **S7 (META/ORCL, 1H)** šioje dalyje netestuojama: 3 metų 1H istorija per IB per daug
+  didelė (>5000 žvakių kiekvienam).
+- **Informaciniai priedai (NE tikras testas):** S3, S8, S11, S12, S15 ant visų trijų
+  akcijų, kad matytume, ar strategijos, sukurtos akcijoms, elgiasi kitaip nei BTC.
+  Lentelė jų instrumentų nenurodo (S11, S12, S15 — „akcijų swing“ be tikro simbolio),
+  todėl šie rezultatai verdiktui neįskaitomi.
+- Tos pačios operacionalizacijos, langai (main 2023-10-10→2026-04-10, hold-out
+  →2026-10-10), kaštai (0.1%, slippage 2 tick = $0.02), 1% rizika, $1000.
+- Papildomai pateikiu buy&hold tame pačiame lange.
