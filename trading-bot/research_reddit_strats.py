@@ -4,7 +4,7 @@ research/reddit/pine/). Assumptions, windows and criteria are fixed in
 research/reddit/reddit_strategies_prereg.md (written before any result).
 
 Usage (from trading-bot/):
-    .venv/bin/python research_reddit_strats.py <cache_dir_with_BTCUSDT_1h.pkl_and_BTCUSDT_1d.pkl>
+    .venv/bin/python research_reddit_strats.py <cache_dir_with_BTCUSDT_1h.pkl>   (daily bars are built from 1h)
 """
 import pickle
 import sys
@@ -383,7 +383,9 @@ def evaluate(name: str, tf: str, fn: StrategyFn, data: dict[str, Data]) -> dict:
 
 def load(cache: Path) -> dict[str, Data]:
     h = pickle.loads((cache / "BTCUSDT_1h.pkl").read_bytes())
-    dd = pickle.loads((cache / "BTCUSDT_1d.pkl").read_bytes())
+    g = h.resample("1D")
+    dd = g.agg({"open": "first", "high": "max", "low": "min", "close": "last"})
+    dd = dd[g["close"].count() == 24]                  # complete UTC days only (== Binance daily candle)
     return {"1h": Data.from_df(h), "1d": Data.from_df(dd)}
 
 

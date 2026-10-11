@@ -1,0 +1,35 @@
+//@version=5
+// Parašyta pagal taisykles iš Reddit lentelės. TradingView Strategy Tester NEPALEISTA (nebuvo prieigos) —
+// prieš naudojimą įkelk į TV ir patikrink. Komisija 0.1%, slippage 2 tick, rizika 1% kapitalo (nominalas <= 100%).
+// S12: BB(20,2) + 200 EMA bulių apsisukimas (lentelės eil. 12, harrymels). Dienos grafikas, tik long.
+// Operacionalizacija (taisyklė neapibrėžta): apsisukimo žvakė = close>open IR close>ankstesnio baro high;
+// "kerta apatinę juostą" = low < apatinė juosta viename iš 3 ankstesnių barų.
+strategy("S12 BB + 200EMA reversal", overlay=true, initial_capital=1000, commission_type=strategy.commission.percent,
+         commission_value=0.1, slippage=2, process_orders_on_close=false, calc_on_every_tick=false, pyramiding=0,
+         margin_long=100, margin_short=100)
+
+startDate = input.time(timestamp("2023-10-10 00:00 +0000"), "Pradžia")
+endDate   = input.time(timestamp("2026-04-10 00:00 +0000"), "Pabaiga (hold-out: 2026-04-10 → 2026-10-10)")
+inRange = time >= startDate and time < endDate
+
+ema200 = ta.ema(close, 200)
+[bbM, bbU, bbL] = ta.bb(close, 20, 2)
+atr14 = ta.atr(14)
+
+trend    = close > ema200 and ema200 > ema200[1]
+touched  = low[1] < bbL[1] or low[2] < bbL[2] or low[3] < bbL[3]
+reversal = close > open and close > high[1]
+
+var float distE = na
+if inRange and strategy.position_size == 0 and trend and touched and reversal
+    distE := math.min(atr14, 0.05 * close)
+    qty = math.min(strategy.equity * 0.01 / distE, strategy.equity / close)
+    strategy.entry("L", strategy.long, qty=qty)
+
+if strategy.position_size > 0
+    entryP = strategy.position_avg_price
+    tp = math.min(entryP + 1.5 * distE, bbU[1])                              // 1.5R arba viršutinė BB
+    strategy.exit("X", "L", stop=entryP - distE, limit=tp)
+
+if not inRange and strategy.position_size > 0
+    strategy.close_all()

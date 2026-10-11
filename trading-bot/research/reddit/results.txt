@@ -1,0 +1,10 @@
+BTCUSDT, pagrindinis 2023-10-10→2026-04-10, hold-out 2026-04-10→2026-10-10; $1000, komisija 0.1%, slippage 0.02 USDT, rizika 1%
+
+strategija                       TF  grynasis% sand.  win%    PF  PF5%   DD%  verdiktas       | hold-out: net% sand. PF DD%  overfit
+S8  QS-2 WMA20/50/100/200        1d       +8.4    20    40  3.28  1.28   2.2  МАЛО ДАННЫХ    |    +1.0   3  2.51   0.7  
+S15 8 EMA / 20 EMA               1d      +91.7    55    29  1.83  0.68  27.8  НЕ РАБОТАЕТ    |    +3.9  13  1.29  14.8  
+S12 BB + 200EMA reversal         1d       +4.2    20    55  1.44  0.66   2.8  МАЛО ДАННЫХ    |    -0.6   2  0.40   1.1  
+S3  RSI-2 + 150EMA               1d       +3.5    47    36  1.38  0.65   2.9  РАБОТАЕТ       |    -0.2   3  0.77   0.4  РАЗВАЛИЛАСЬ (hold-out tik 3 sand.)
+S11 ATR proveržis + FreeRoll     1d      +14.8    73    26  1.36  0.76   9.6  РАБОТАЕТ       |    +2.9  10  1.54   4.4  держится (hold-out tik 10 sand.)
+S7  QS-1 EMA34/SMA20(low)+ADX    1h       +2.6   110    49  1.04  0.77  12.0  НЕ РАБОТАЕТ    |    +2.9  12  1.54   3.3  
+S1  Supply&Demand 200EMA         1h      -12.7    54    31  0.49  0.23  12.7  НЕ РАБОТАЕТ    |    -6.4  12  0.14   6.6  
