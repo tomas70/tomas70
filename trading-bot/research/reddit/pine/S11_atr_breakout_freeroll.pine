@@ -1,0 +1,54 @@
+//@version=5
+// Parašyta pagal taisykles iš Reddit lentelės. TradingView Strategy Tester NEPALEISTA (nebuvo prieigos) —
+// prieš naudojimą įkelk į TV ir patikrink. Komisija 0.1%, slippage 2 tick, rizika 1% kapitalo (nominalas <= 100%).
+// S11: ATR proveržis + FreeRoll (lentelės eil. 11, yoyo1time). Dienos grafikas, tik long.
+strategy("S11 ATR proveržis + FreeRoll", overlay=true, initial_capital=1000, commission_type=strategy.commission.percent,
+         commission_value=0.1, slippage=2, process_orders_on_close=false, calc_on_every_tick=false, pyramiding=0,
+         margin_long=100, margin_short=100)
+
+startDate = input.time(timestamp("2023-10-10 00:00 +0000"), "Pradžia")
+endDate   = input.time(timestamp("2026-04-10 00:00 +0000"), "Pabaiga (hold-out: 2026-04-10 → 2026-10-10)")
+breakoutPct = input.float(0.25, "Proveržis virš ankstesnio baro korpuso High, % (lentelė: 25–50 bps; imta apatinė riba)") / 100
+inRange = time >= startDate and time < endDate
+
+atr14 = ta.atr(14)
+bodyHigh = math.max(open[1], close[1])
+level = bodyHigh * (1 + breakoutPct)
+
+var float atrE = na
+var float entryP = na
+var float stopP = na
+var float hh = na
+var bool trail = false
+
+flat = strategy.position_size == 0
+if inRange and flat and not na(atr14[1])
+    atrE := atr14[1]
+    stopDist = 1.5 * atrE
+    qty = math.min(strategy.equity * 0.01 / stopDist, strategy.equity / level)
+    strategy.entry("L", strategy.long, qty=qty, stop=level)
+
+justFilled = strategy.position_size > 0 and strategy.position_size[1] == 0
+if justFilled
+    entryP := strategy.position_avg_price
+    stopP := entryP - 1.5 * atrE
+    hh := high
+    trail := false
+
+if strategy.position_size > 0 and not justFilled
+    // pakeitimai galioja nuo kitos žvakės (naudojam praėjusio baro high)
+    hh := math.max(hh, high[1])
+    if high[1] >= entryP + 1.5 * atrE
+        stopP := math.max(stopP, entryP)
+    if high[1] >= entryP + 3 * atrE
+        trail := true
+        stopP := math.max(stopP, entryP + 1.5 * atrE)
+    if trail
+        stopP := math.max(stopP, hh - 1.5 * atrE)
+
+if strategy.position_size > 0
+    strategy.exit("X", "L", stop=stopP)
+
+if not inRange and strategy.position_size > 0
+    strategy.close_all()
+plot(strategy.position_size > 0 ? stopP : na, "Stop", color=color.red, style=plot.style_linebr)

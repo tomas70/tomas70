@@ -1,0 +1,30 @@
+//@version=5
+// Parašyta pagal taisykles iš Reddit lentelės. TradingView Strategy Tester NEPALEISTA (nebuvo prieigos) —
+// prieš naudojimą įkelk į TV ir patikrink. Komisija 0.1%, slippage 2 tick, rizika 1% kapitalo (nominalas <= 100%).
+// S8: Quantified Strategies #2 — WMA 20/50/100/200 (lentelės eil. 8). Dienos grafikas, tik long.
+strategy("S8 QS-2 WMA20/50/100/200", overlay=true, initial_capital=1000, commission_type=strategy.commission.percent,
+         commission_value=0.1, slippage=2, process_orders_on_close=false, calc_on_every_tick=false, pyramiding=0,
+         margin_long=100, margin_short=100)
+
+startDate = input.time(timestamp("2023-10-10 00:00 +0000"), "Pradžia")
+endDate   = input.time(timestamp("2026-04-10 00:00 +0000"), "Pabaiga (hold-out: 2026-04-10 → 2026-10-10)")
+inRange = time >= startDate and time < endDate
+
+w20  = ta.wma(close, 20)
+w50  = ta.wma(close, 50)
+w100 = ta.wma(close, 100)
+w200 = ta.wma(close, 200)
+
+longCond = inRange and strategy.position_size == 0 and close > w20 and close > w50 and close > w100 and close > w200
+if longCond
+    qty = math.min(strategy.equity * 0.01 / (close * 0.15), strategy.equity / close)
+    strategy.entry("L", strategy.long, qty=qty)
+
+if strategy.position_size > 0
+    entryP = strategy.position_avg_price
+    strategy.exit("X", "L", stop=entryP * 0.85, limit=entryP * 1.25)        // SL 15%, TP 25%
+    if close < w100                                                          // Close žemyn per WMA100
+        strategy.close("L")
+
+if not inRange and strategy.position_size > 0
+    strategy.close_all()

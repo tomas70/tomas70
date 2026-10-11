@@ -1,0 +1,36 @@
+//@version=5
+// Parašyta pagal taisykles iš Reddit lentelės. TradingView Strategy Tester NEPALEISTA (nebuvo prieigos) —
+// prieš naudojimą įkelk į TV ir patikrink. Komisija 0.1%, slippage 2 tick, rizika 1% kapitalo (nominalas <= 100%).
+// S3: RSI-2 + 150 EMA (lentelės eil. 3, alexluthen). Dienos grafikas, tik long (short nenurodytas).
+strategy("S3 RSI-2 + 150 EMA", overlay=true, initial_capital=1000, commission_type=strategy.commission.percent,
+         commission_value=0.1, slippage=2, process_orders_on_close=false, calc_on_every_tick=false, pyramiding=0,
+         margin_long=100, margin_short=100)
+
+startDate = input.time(timestamp("2023-10-10 00:00 +0000"), "Pradžia")
+endDate   = input.time(timestamp("2026-04-10 00:00 +0000"), "Pabaiga (hold-out: 2026-04-10 → 2026-10-10)")
+inRange = time >= startDate and time < endDate
+
+ema150 = ta.ema(close, 150)
+rsi2   = ta.rsi(close, 2)
+rsi20  = ta.rsi(close, 20)
+atr14  = ta.atr(14)
+
+var float atrE = na
+longCond = inRange and strategy.position_size == 0 and close > ema150 and ema150 > ema150[1] and rsi2 < 15
+if longCond
+    atrE := atr14
+    qty = math.min(strategy.equity * 0.01 / (2 * atrE), strategy.equity / close)
+    strategy.entry("L", strategy.long, qty=qty)
+
+if strategy.position_size > 0
+    entryP = strategy.position_avg_price
+    strategy.exit("SL", "L", stop=entryP - 2 * atrE)                       // SL = 2 ATR
+    held = bar_index - strategy.opentrades.entry_bar_index(0) + 1
+    rsiExit  = ta.crossunder(rsi20, 55)                                      // RSI-20 kerta žemyn 55
+    lossExit = held >= 1 and close < entryP                                  // po 1 d. nuostolyje
+    winExit  = held >= 6 and close > entryP                                  // po 6 d. pelne
+    if rsiExit or lossExit or winExit
+        strategy.close("L")
+
+if not inRange and strategy.position_size > 0
+    strategy.close_all()

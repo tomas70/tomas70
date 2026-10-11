@@ -1,0 +1,23 @@
+//@version=5
+// Parašyta pagal taisykles iš Reddit lentelės. TradingView Strategy Tester NEPALEISTA (nebuvo prieigos) —
+// prieš naudojimą įkelk į TV ir patikrink. Komisija 0.1%, slippage 2 tick, rizika 1% kapitalo (nominalas <= 100%).
+// S15: 8 EMA / 20 EMA (lentelės eil. 15). Dienos grafikas, tik long. Stop'o taisyklėje nėra -> fiksuotas dydis 100% kapitalo.
+strategy("S15 8 EMA / 20 EMA", overlay=true, initial_capital=1000, commission_type=strategy.commission.percent,
+         commission_value=0.1, slippage=2, process_orders_on_close=false, calc_on_every_tick=false, pyramiding=0,
+         default_qty_type=strategy.percent_of_equity, default_qty_value=100, margin_long=100, margin_short=100)
+
+startDate = input.time(timestamp("2023-10-10 00:00 +0000"), "Pradžia")
+endDate   = input.time(timestamp("2026-04-10 00:00 +0000"), "Pabaiga (hold-out: 2026-04-10 → 2026-10-10)")
+inRange = time >= startDate and time < endDate
+
+ema8  = ta.ema(close, 8)
+ema20 = ta.ema(close, 20)
+
+if inRange and strategy.position_size == 0 and close > ema8 and ema8 > ema20
+    strategy.entry("L", strategy.long)
+
+if strategy.position_size > 0
+    strategy.exit("X", "L", stop=ema20[1])                                   // kaina paliečia 20 EMA
+
+if not inRange and strategy.position_size > 0
+    strategy.close_all()

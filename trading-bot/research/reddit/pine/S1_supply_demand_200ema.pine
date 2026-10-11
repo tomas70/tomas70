@@ -1,0 +1,52 @@
+//@version=5
+// Parašyta pagal taisykles iš Reddit lentelės. TradingView Strategy Tester NEPALEISTA (nebuvo prieigos) —
+// prieš naudojimą įkelk į TV ir patikrink. Komisija 0.1%, slippage 2 tick, rizika 1% kapitalo (nominalas <= 100%).
+// S1: Supply & Demand + 200 EMA (lentelės eil. 1). 1h, long ir short.
+// Operacionalizacija (taisyklė neapibrėžta): "stipri žvakė" = korpusas >= 50% žvakės aukščio ir kryptis; touch = 200 EMA tarp low ir high;
+// seka: touch žvakė, tada dvi stiprios žvakės. SL = pirmos patvirtinimo žvakės low/high; TP = artimiausias pivot (5/5) swing.
+strategy("S1 Supply&Demand 200EMA", overlay=true, initial_capital=1000, commission_type=strategy.commission.percent,
+         commission_value=0.1, slippage=2, process_orders_on_close=false, calc_on_every_tick=false, pyramiding=0,
+         margin_long=100, margin_short=100)
+
+startDate = input.time(timestamp("2023-10-10 00:00 +0000"), "Pradžia")
+endDate   = input.time(timestamp("2026-04-10 00:00 +0000"), "Pabaiga (hold-out: 2026-04-10 → 2026-10-10)")
+inRange = time >= startDate and time < endDate
+
+ema200 = ta.ema(close, 200)
+rng = math.max(high - low, syminfo.mintick)
+body = math.abs(close - open) / rng
+bull = close > open and body >= 0.5 and close > ema200
+bear = close < open and body >= 0.5 and close < ema200
+touch = low <= ema200 and high >= ema200
+
+var float lastPH = na
+var float lastPL = na
+ph = ta.pivothigh(high, 5, 5)
+pl = ta.pivotlow(low, 5, 5)
+if not na(ph)
+    lastPH := ph
+if not na(pl)
+    lastPL := pl
+
+longSig  = touch[2] and bull[1] and bull
+shortSig = touch[2] and bear[1] and bear
+
+var float slP = na
+var float tpP = na
+if inRange and strategy.position_size == 0
+    if longSig and not na(lastPH) and lastPH > close and low[1] < close
+        slP := low[1]
+        tpP := lastPH
+        strategy.entry("L", strategy.long, qty=math.min(strategy.equity * 0.01 / (close - slP), strategy.equity / close))
+    else if shortSig and not na(lastPL) and lastPL < close and high[1] > close
+        slP := high[1]
+        tpP := lastPL
+        strategy.entry("S", strategy.short, qty=math.min(strategy.equity * 0.01 / (slP - close), strategy.equity / close))
+
+if strategy.position_size > 0
+    strategy.exit("XL", "L", stop=slP, limit=tpP)
+if strategy.position_size < 0
+    strategy.exit("XS", "S", stop=slP, limit=tpP)
+
+if not inRange and strategy.position_size != 0
+    strategy.close_all()
