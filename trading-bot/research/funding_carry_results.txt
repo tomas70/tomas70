@@ -1,0 +1,32 @@
+BTC: 2019-06-01 → 2026-10-12, 2691 d., neišsamių/trūkstamų 2 (0.1%)
+ETH: 2019-06-01 → 2026-10-12, 2691 d., neišsamių/trūkstamų 2 (0.1%)
+
+═══ C0 ═══
+  BTC        C0: grynoji metinė (nuo kapitalo 1.25×) +6.0%  NW t(vs 4%) +2.69  | įjungta 100% dienų  | stresas +4.1%
+             metai: 2019: +5.9%  2020: +7.4%  2021: +13.2%  2022: -1.8%  2023: +5.5%  2024: +8.2%  2025: +4.3%  2026: +1.2%
+             kriterijai: 1 (>4% ir t>3.0) False | 2 (≥4/5 metų: 4/5; 2024-25 +4.9% ≥4%) True | 3 stresas>0 True
+  ETH        C0: grynoji metinė +4.1%  NW t(vs 4%) +0.15  → kriterijus 4 (>4% ir t>2.0): False
+  → C0 NEPRAEINA
+
+═══ C1 ═══
+  BTC        C1: grynoji metinė (nuo kapitalo 1.25×) +5.3%  NW t(vs 4%) +1.93  | įjungta 78% dienų  | stresas +1.7%
+             metai: 2019: +4.2%  2020: +9.3%  2021: +12.1%  2022: -1.2%  2023: +4.3%  2024: +7.7%  2025: +3.2%  2026: -0.4%
+             kriterijai: 1 (>4% ir t>3.0) False | 2 (≥4/5 metų: 4/5; 2024-25 +3.8% ≥4%) False | 3 stresas>0 True
+  ETH        C1: grynoji metinė +4.1%  NW t(vs 4%) +0.18  → kriterijus 4 (>4% ir t>2.0): False
+  → C1 NEPRAEINA
+
+═══ APRAŠOMIEJI ═══
+  BTC funding (metinis, vid.): 2019: +12.9%  2020: +9.2%  2021: +16.5%  2022: -2.3%  2023: +6.9%  2024: +10.3%  2025: +5.4%  2026: +2.1%
+     neigiamų dienų dalis: 2019: 41%  2020: 27%  2021: 21%  2022: 53%  2023: 16%  2024: 16%  2025: 19%  2026: 25%
+     ilgiausia neigiama serija 46 d.; blogiausia 30 d. suma -3.41% nominalo; pirma pusė +8.6%/m. → antra pusė +6.5%/m.
+  ETH funding (metinis, vid.): 2019: +4.1%  2020: +6.3%  2021: +17.3%  2022: -6.1%  2023: +7.9%  2024: +8.4%  2025: +1.0%  2026: +1.4%
+     neigiamų dienų dalis: 2019: 49%  2020: 39%  2021: 28%  2022: 59%  2023: 15%  2024: 18%  2025: 43%  2026: 29%
+     ilgiausia neigiama serija 74 d.; blogiausia 30 d. suma -4.41% nominalo; pirma pusė +5.5%/m. → antra pusė +4.9%/m.
+  BTC C0 − C1 metinė grąža (nuo kapitalo): +6.0% vs +5.3%
+  BTC funding T50 FLAT dienomis (n=1235): vid. -0.5%/m.; T50 LONG dienomis (n=1450): +14.3%/m.
+/home/user/tomas70/trading-bot/research_funding_carry.py:169: Pandas4Warning: Sorting by default when concatenating all DatetimeIndex is deprecated.  In the future, pandas will respect the default of `sort=False`. Specify `sort=True` or `sort=False` to silence this message. If you see this warnings when not directly calling concat, report a bug to pandas.
+  both = pd.concat([c0, btc.pct_change()], axis=1).dropna()
+  koreliacija C0 dienos P&L su BTC grąža: +0.07
+
+Verdiktas pagal registraciją: C0 NEPRAEINA, C1 NEPRAEINA
+(PRAEINA = tik „premija egzistuoja Deribit ir aplenkia grynuosius po kaštų“; bazės/likvidacijos rizika nemodeliuota.)

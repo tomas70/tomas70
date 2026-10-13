@@ -160,11 +160,12 @@ def main() -> None:
     print(f"  BTC C0 − C1 metinė grąža (nuo kapitalo): {annual(c0)*100:+.1f}% vs {annual(c1)*100:+.1f}%")
     btc = pd.read_pickle(bcache / "BTCUSDT.pkl")[1]["close"]
     btc.index = pd.to_datetime(btc.index, utc=True).normalize()
-    flat = (trend_positions(btc, "T50") == 0).reindex(data["BTC"].index)
+    pos = trend_positions(btc, "T50").astype(float).reindex(data["BTC"].index)
     Fb = data["BTC"]
-    m = flat.notna() & Fb.notna()
-    print(f"  BTC funding T50 FLAT dienomis (n={int((flat & m).sum())}): vid. {Fb[flat & m].mean()*365*100:+.1f}%/m.; "
-          f"T50 LONG dienomis: {Fb[~flat & m].mean()*365*100:+.1f}%/m.")
+    m = pos.notna() & Fb.notna()
+    flat, long_ = m & (pos == 0), m & (pos > 0)
+    print(f"  BTC funding T50 FLAT dienomis (n={int(flat.sum())}): vid. {Fb[flat].mean()*365*100:+.1f}%/m.; "
+          f"T50 LONG dienomis (n={int(long_.sum())}): {Fb[long_].mean()*365*100:+.1f}%/m.")
     both = pd.concat([c0, btc.pct_change()], axis=1).dropna()
     print(f"  koreliacija C0 dienos P&L su BTC grąža: {both.corr().iloc[0, 1]:+.2f}")
     print(f"\nVerdiktas pagal registraciją: C0 {'PRAEINA' if verdict['C0'] else 'NEPRAEINA'}, "
