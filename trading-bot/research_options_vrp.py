@@ -71,12 +71,13 @@ def atm_call_pct(iv: float, days: int = HORIZON) -> float:
 
 
 def build_frame(dvol: pd.Series, px: pd.Series) -> pd.DataFrame:
+    sma50_full = px.rolling(50).mean()          # on the full price history, before the DVOL join (warm-up)
     df = pd.DataFrame({"iv": dvol / 100, "px": px}).dropna()
     px = df["px"]
     logret = np.log(px).diff()
     fwd = logret[::-1].rolling(HORIZON).std(ddof=1)[::-1].shift(-1) * math.sqrt(365)   # t+1 .. t+30
     ret30 = px.shift(-HORIZON) / px - 1
-    sma50 = px.rolling(50).mean()
+    sma50 = sma50_full.reindex(df.index)
     out = pd.DataFrame({
         "iv": df["iv"], "rv": fwd, "ret30": ret30, "long": (px > sma50).astype(float),
         "sma_ok": sma50.notna(),

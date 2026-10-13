@@ -257,9 +257,11 @@ def main() -> None:
     m, t, nd = day_t(base)
     z3, hit3, n3 = z_skill(base, 2)
     th = thirds(base)
-    ok = bool(m > 0 and t > T_PASS and all(x > 0 for x in th) and z3 > Z_PASS)
-    print(f"\nKriterijai: net>0 ir t>{T_PASS}: {m>0 and t>T_PASS} (t={t:.2f}); kiekvienas trečdalis>0: "
-          f"{all(x > 0 for x in th)}; TP3 z>{Z_PASS}: {z3 > Z_PASS} (z={z3:.2f})  →  {'PRAEINA' if ok else 'NEPRAEINA'}\n")
+    ok = bool(m > 0 and t > T_PASS and all(x > 0 for x in th))
+    print(f"\nVerdiktas pagal kriterijus 1-2: net>0 ir t>{T_PASS}: {m>0 and t>T_PASS} (t={t:.2f}); kiekvienas trečdalis>0: "
+          f"{all(x > 0 for x in th)}  →  {'PRAEINA' if ok else 'NEPRAEINA'}")
+    print(f"(3 kriterijus TP3 z>{Z_PASS}: z={z3:.2f} — APRAŠOMASIS, NE verdikto dalis: resolve_levels atmeta nebaigtus "
+          f"sandorius (cenzūra), todėl hit rate pervertinamas; auditas 2026-10-12)\n")
 
     print("═══ APRAŠOMIEJI ═══")
     for label, kw in (("M1 (+15 min)", dict(mode="M1")), ("L (limit viduryje)", dict(mode="L")),
