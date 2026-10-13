@@ -48,3 +48,12 @@ def test_build_frame_alignment_and_pl_arithmetic():
     expect = row["prem_straddle"] * (1 - vr.COST_FRAC) - abs(row["ret30"])
     assert abs(row["pl_straddle"] - expect) < 1e-12
     assert row["pl_put"] == row["prem_put"] * (1 - vr.COST_FRAC)                  # price rose: put expires worthless
+
+
+def test_t50_flag_uses_sma_warmup_from_before_dvol_start():
+    idx = pd.date_range("2021-01-01", periods=200, freq="D", tz="UTC")
+    px = pd.Series(np.linspace(100, 300, 200), index=idx)                         # steady uptrend -> always above SMA50
+    dvol = pd.Series(50.0, index=idx[100:])                                       # DVOL starts 100 days later
+    f = vr.build_frame(dvol, px)
+    assert f["sma_ok"].all()                                                      # SMA warmed up on the full history
+    assert (f["long"] == 1).all()                                                 # first DVOL days must not be forced FLAT

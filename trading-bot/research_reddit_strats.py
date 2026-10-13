@@ -242,7 +242,7 @@ def s12_bb_ema(d: Data, s: int, e: int) -> list[Trade]:
         trend = d.c[i] > e200[i] and e200[i] > e200[i - 1]
         touched = any(d.l[k] < lo[k] for k in range(i - 3, i))
         reversal = d.c[i] > d.o[i] and d.c[i] > d.h[i - 1]
-        if trend and touched and reversal and d.o[i + 1] > e200[i + 1] and not np.isnan(up[i]):
+        if trend and touched and reversal and d.o[i + 1] > e200[i] and not np.isnan(up[i]):
             ei, entry = i + 1, d.o[i + 1]
             dist = min(a[i], 0.05 * entry)
             stop = entry - dist

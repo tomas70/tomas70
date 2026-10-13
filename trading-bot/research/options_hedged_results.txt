@@ -1,0 +1,32 @@
+BTC 2021-03-24 → 2026-09-08 (1995 įėjimų), ETH 2021-03-24 → 2026-09-08 (1995)
+
+═══ A delta-hedged straddle ═══
+  BTC pagrindiniai               vid. +1.67%/30d  NW t +4.77  p5 -5.0%  blogiausias -15.2%  teigiamų dienų 68%  | metai teigiami 6/6  | DD mediana 10% blogiausia 15%
+  BTC stresas                    vid. +0.61%/30d  NW t +1.78  p5 -6.1%  blogiausias -16.2%  teigiamų dienų 59%  | metai teigiami 4/6  | DD mediana 15% blogiausia 26%
+  ETH pagrindiniai               vid. +0.83%/30d  NW t +1.70  p5 -8.0%  blogiausias -35.4%  teigiamų dienų 61%  | metai teigiami 4/6  | DD mediana 26% blogiausia 36%
+  BTC pagal metus: 2021: +3.59% (n=283)  2022: +2.71% (n=365)  2023: +0.71% (n=365)  2024: +1.37% (n=366)  2025: +1.17% (n=365)  2026: +0.57% (n=251)
+  Kriterijai: 1 BTC t>3.0: True | 2 metai≥4/6: True | 3 stresas>0: True | 4 ETH t>2.0: False | 5 DD: True  →  NEPRAEINA
+
+═══ B iron butterfly ═══
+  BTC pagrindiniai               vid. -1.35%/30d  NW t -3.28  p5 -7.8%  blogiausias -8.5%  teigiamų dienų 43%  | metai teigiami 1/6  | DD mediana 64% blogiausia 80%
+  BTC stresas                    vid. -3.99%/30d  NW t -8.75  p5 -11.3%  blogiausias -15.8%  teigiamų dienų 31%  | metai teigiami 0/6  | DD mediana 94% blogiausia 97%
+  ETH pagrindiniai               vid. -2.50%/30d  NW t -6.22  p5 -7.5%  blogiausias -9.9%  teigiamų dienų 33%  | metai teigiami 0/6  | DD mediana 83% blogiausia 90%
+  BTC pagal metus: 2021: -3.39% (n=283)  2022: -1.52% (n=365)  2023: -1.33% (n=365)  2024: -0.98% (n=366)  2025: +0.19% (n=365)  2026: -1.59% (n=251)
+  Kriterijai: 1 BTC t>3.0: False | 2 metai≥4/6: False | 3 stresas>0: False | 4 ETH t>2.0: False | 5 DD: False  →  NEPRAEINA
+
+═══ APRAŠOMIEJI ═══
+  A ne persidengiantys (BTC, kas 30-a eilutė): n=67, vid. +1.82%, teigiamų 43/67
+  B ne persidengiantys (BTC, kas 30-a eilutė): n=67, vid. -1.54%, teigiamų 29/67
+  A skaidinys (BTC, vid. %S): premija po kaštų +13.30, settlement -12.44, hedge P&L +0.99, hedge kaštai -0.19
+  Kaštų jautrumas (A, BTC vid. %/30d):
+    c_opt 0%: c_hedge 0bps +2.27% | c_hedge 5bps +2.08% | c_hedge 15bps +1.71%
+    c_opt 3%: c_hedge 0bps +1.86% | c_hedge 5bps +1.67% | c_hedge 15bps +1.29%
+    c_opt 8%: c_hedge 0bps +1.18% | c_hedge 5bps +0.99% | c_hedge 15bps +0.61%
+  B, sparnų σ ×1.0: vid. +0.15%
+  B, sparnų σ ×1.15: vid. -1.35%
+  B, sparnų σ ×1.3: vid. -2.96%
+  A | T50=LONG: n=1008 vid. +1.68% (NW t +4.09; aprašomasis)
+  A | T50=FLAT: n=987 vid. +1.66% (NW t +3.13; aprašomasis)
+
+Verdiktas pagal registraciją: A NEPRAEINA, B NEPRAEINA
+(PRAEINA = tik „verta tikrinti su realiomis Deribit kotiruotėmis“.)

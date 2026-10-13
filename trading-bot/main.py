@@ -8,10 +8,13 @@ git branch archive/sweep-bot. What remains:
   * a paper portfolio that follows the one rule that passed its pre-registered
     tests (BTC long when the daily close is above the 50-day SMA), updated
     every 30 minutes and announced on Telegram when the state flips
+  * a forward logger of real Deribit BTC/ETH option quotes (one snapshot per
+    UTC day), to check the assumptions of the option-premium proxy study
   * read-only Evedex account views
 
 Commands (send to your bot from iPhone):
   /paper     → paper tracker status (BTC T50, $100 paper account)
+  /options   → Deribit option-quote logger: real prices vs the DVOL proxy
   /status    → live balance and 30-day trade stats (from Evedex)
   /positions → open positions (read-only)
   /help      → command list
@@ -39,6 +42,7 @@ from analysis.evedex_account import (
     get_open_positions, summarize_trades,
 )
 from analysis.market_data import exchange_url, from_instrument
+from analysis.option_logger import report as option_report, update as option_update
 from analysis.paper_tracker import format_report as paper_report, update as paper_update
 from notifications.bot_commands import listen_for_commands
 from notifications.telegram_bot import send_telegram
@@ -89,6 +93,15 @@ def paper_job() -> None:
         logger.warning("paper tracker: %s", exc)
 
 
+def option_job() -> None:
+    """Log today's Deribit option snapshot (no-op once both currencies are logged)."""
+    try:
+        for line in option_update():
+            logger.info("option logger: %s", line)
+    except Exception as exc:
+        logger.warning("option logger: %s", exc)
+
+
 # ─── Telegram command handler ─────────────────────────────────────────────────
 
 def _positions_text() -> str:
@@ -116,6 +129,7 @@ def handle_command(command: str, args: list[str]) -> str:
         return (
             "🤖 <b>Bot komandos:</b>\n\n"
             "/paper — paper portfelis: BTC trend T50 ($100)\n"
+            "/options — Deribit opcijų loggeris: realios kainos vs proxy\n"
             "/status — balansas ir 30 d. sandorių statistika (iš Evedex)\n"
             "/positions — atviros pozicijos (tik peržiūra)\n"
             "/help — ši pagalba\n\n"
@@ -126,6 +140,10 @@ def handle_command(command: str, args: list[str]) -> str:
     if command == "/paper":
         paper_job()
         return paper_report()
+
+    if command == "/options":
+        option_job()
+        return option_report()
 
     if command == "/status":
         try:
@@ -173,11 +191,13 @@ def main() -> None:
     logger.info("Bot paleistas | paper tracker kas %d min + Telegram komandos", PAPER_INTERVAL_MINUTES)
 
     paper_job()  # immediate first run
+    option_job()
 
     # Scheduler runs in its own thread — schedule setup must happen inside
     # the same thread that calls run_pending() (thread safety).
     def _scheduler_loop() -> None:
         schedule.every(PAPER_INTERVAL_MINUTES).minutes.do(paper_job)
+        schedule.every(PAPER_INTERVAL_MINUTES).minutes.do(option_job)
         while True:
             schedule.run_pending()
             time.sleep(60)
