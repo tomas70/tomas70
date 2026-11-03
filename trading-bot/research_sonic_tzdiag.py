@@ -6,6 +6,9 @@ simplest innocent explanation: that the published times are broker SERVER time, 
 For each whole-hour offset h, a listed time T is read as UTC = T - h. Correlation of the published move
 with the market move over [open, close] is reported per h.
 
+NOTE: run BEFORE analysis/sonic_follow.py applied server_to_utc (it then reads published times as UTC);
+after the fix the correct offset is h = 0.
+
 Usage: .venv/bin/python research_sonic_tzdiag.py trades_raw.txt trades_new.csv [day_bars_cache.pkl]
 """
 import pickle

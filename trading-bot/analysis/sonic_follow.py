@@ -21,8 +21,10 @@ import math
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Optional
+from zoneinfo import ZoneInfo
 
 import httpx
+import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -35,7 +37,7 @@ PRIMARY_DELAY = 3
 FEE = 0.0004                 # per side, Evedex taker (as analysis/paper_tracker.py)
 HALF_SPREAD = 0.20           # USD/oz per side, measured on the live book 2026-11-03
 MAX_HOLD_MIN = 720
-FORWARD_START = pd.Timestamp("2026-11-04", tz="UTC")
+FORWARD_START = pd.Timestamp("2026-11-04", tz="UTC")   # compared with UTC-converted trade times
 FALLBACK_MIN = 3             # missing minute -> first candle within this many minutes after
 
 COLUMNS = ["open", "close", "side", "sonic_pts"] + [
@@ -44,12 +46,28 @@ COLUMNS = ["open", "close", "side", "sonic_pts"] + [
 
 # ── parsing ───────────────────────────────────────────────────────────────
 
+_NY = ZoneInfo("America/New_York")
+
+
+def server_to_utc(t: pd.Timestamp) -> pd.Timestamp:
+    """Published times are the broker SERVER clock: UTC+3 while New York is on daylight time, else UTC+2.
+
+    Found by a time-offset diagnostic (research/sonic_follow_prereg.md, addendum): with +3 the published
+    move matches the Evedex move (corr 0.83 over Apr-Oct 2026, 0.99 on Oct 26-30 when Europe was already
+    on winter time), with any other whole-hour offset corr is ~0.
+    """
+    naive = t.tz_localize(None) if t.tzinfo else t
+    probe = naive.tz_localize("UTC").to_pydatetime().astimezone(_NY)
+    offset = 3 if probe.dst() else 2
+    return (naive - pd.Timedelta(hours=offset)).tz_localize("UTC")
+
+
 def parse_new_csv(text: str) -> list[dict]:
     """trades_new.csv: open,close,side,lots,price_open,price_close,profit (UTC 'YYYY-MM-DD HH:MM')."""
     out = []
     for r in csv.DictReader(text.strip().splitlines()):
         side = 1 if r["side"] == "B" else -1
-        out.append({"open": pd.Timestamp(r["open"], tz="UTC"), "close": pd.Timestamp(r["close"], tz="UTC"),
+        out.append({"open": server_to_utc(pd.Timestamp(r["open"])), "close": server_to_utc(pd.Timestamp(r["close"])),
                     "side": side, "sonic_pts": side * (float(r["price_close"]) - float(r["price_open"]))})
     return out
 
@@ -58,7 +76,7 @@ def parse_raw(text: str) -> list[dict]:
     """trades_raw.txt: open (minutes since epoch), duration (min), B/S, lots, price_open, price_close, profit."""
     out = []
     for row in csv.reader(text.strip().splitlines()):
-        o = pd.Timestamp(int(float(row[0])) * 60, unit="s", tz="UTC")
+        o = server_to_utc(pd.Timestamp(int(float(row[0])) * 60, unit="s"))
         side = 1 if row[2] == "B" else -1
         out.append({"open": o, "close": o + pd.Timedelta(minutes=int(row[1])), "side": side,
                     "sonic_pts": side * (float(row[5]) - float(row[4]))})
@@ -170,6 +188,21 @@ def update(now: Optional[datetime] = None, path: Optional[Path] = None, feed_tex
     return out
 
 
+SYNC_WINDOW, SYNC_MIN = 20, 0.5
+
+
+def sync_check(rows: list[dict]) -> Optional[float]:
+    """Correlation of Sonic's published move with the follower's d=0 move over the latest trades."""
+    pairs = [(float(r["sonic_pts"]), float(r["gross_0"]) * float(r["entry_0"]) / 1e4)
+             for r in rows[-SYNC_WINDOW:] if r.get("gross_0") and r.get("entry_0")]
+    if len(pairs) < 8:
+        return None
+    a, b = zip(*pairs)
+    if len(set(a)) < 2 or len(set(b)) < 2:
+        return None
+    return float(np.corrcoef(a, b)[0, 1])
+
+
 def report(path: Optional[Path] = None) -> str:
     rows = read_rows(path)
     if not rows:
@@ -186,5 +219,9 @@ def report(path: Optional[Path] = None) -> str:
                      f"suma {sum(v):+.0f} bps ({len(v)} sand.){mark}")
     sp = [float(r["sonic_pts"]) for r in rows]
     lines.append(f"\nSonic paskelbtas vid. judesys: {sum(sp)/len(sp):+.2f} USD/oz")
+    c = sync_check(rows)
+    if c is not None:
+        lines.append(f"Tikrumo patikra (paskutiniai {min(len(rows), SYNC_WINDOW)}): Sonic vs rinkos judesio koreliacija {c:.2f}"
+                     + ("  ⚠️ <b>per maža — laiko konvertavimas ar šaltinis gali nebetikti</b>" if c < SYNC_MIN else "  ✓"))
     lines.append("<i>Ar paskyra tikra — nežinoma. Tik ar sekimas ant Evedex apsimokėtų. Verdiktui reikia ≥100 sandorių.</i>")
     return "\n".join(lines)

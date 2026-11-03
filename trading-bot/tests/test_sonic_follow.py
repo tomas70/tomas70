@@ -17,9 +17,16 @@ NEW = """open,close,side,lots,price_open,price_close,profit
 """
 
 
-def _bars(base=4000.0, step=0.0, start="2026-11-04 07:50", minutes=200):
+def _bars(base=4000.0, step=0.0, start="2026-11-04 05:50", minutes=300):
     idx = pd.date_range(start, periods=minutes, freq="min", tz="UTC")
     return {t: base + step * i for i, t in enumerate(idx)}
+
+
+def test_server_time_is_utc_plus_3_in_us_summer_and_plus_2_in_us_winter():
+    assert sf.server_to_utc(pd.Timestamp("2026-07-01 12:00")) == pd.Timestamp("2026-07-01 09:00", tz="UTC")
+    assert sf.server_to_utc(pd.Timestamp("2026-10-28 10:21")) == pd.Timestamp("2026-10-28 07:21", tz="UTC")   # Europe on winter time, US not yet
+    assert sf.server_to_utc(pd.Timestamp("2026-11-04 10:21")) == pd.Timestamp("2026-11-04 08:21", tz="UTC")
+    assert sf.server_to_utc(pd.Timestamp("2026-01-15 10:00")) == pd.Timestamp("2026-01-15 08:00", tz="UTC")
 
 
 def test_parse_new_csv_and_raw():
@@ -28,6 +35,7 @@ def test_parse_new_csv_and_raw():
     assert t[1]["side"] == -1 and abs(t[1]["sonic_pts"] - (-2.0)) < 1e-9          # sold 4010, closed 4012
     raw = f"{int(pd.Timestamp('2026-11-04 08:00', tz='UTC').timestamp() // 60)},20,B,0.1,4000,4004,39"
     r = sf.parse_raw(raw)[0]
+    assert r["open"] == pd.Timestamp("2026-11-04 06:00", tz="UTC")
     assert r["close"] - r["open"] == pd.Timedelta(minutes=20) and r["sonic_pts"] == 4.0
 
 
@@ -48,10 +56,10 @@ def test_follow_trade_uses_delayed_candle_opens_and_costs():
 def test_missing_candle_falls_back_then_gives_up():
     trade = sf.parse_new_csv(NEW)[0]
     bars = _bars(step=0.0)
-    del bars[pd.Timestamp("2026-11-04 08:00", tz="UTC")]
+    del bars[pd.Timestamp("2026-11-04 06:00", tz="UTC")]
     assert sf.follow_trade(trade, bars, 0) is not None                    # next minute is used
     for k in range(4):
-        bars.pop(pd.Timestamp("2026-11-04 08:00", tz="UTC") + pd.Timedelta(minutes=k), None)
+        bars.pop(pd.Timestamp("2026-11-04 06:00", tz="UTC") + pd.Timedelta(minutes=k), None)
     assert sf.follow_trade(trade, bars, 0) is None
 
 
@@ -66,17 +74,17 @@ def test_day_clustered_t_treats_days_as_observations():
 
 def test_update_logs_new_trades_once_and_skips_recent_and_old(tmp_path):
     f = tmp_path / "s.csv"
-    now = datetime(2026, 11, 4, 10, 5, tzinfo=timezone.utc)               # 10:00 trade not old enough yet
+    now = datetime(2026, 11, 4, 8, 15, tzinfo=timezone.utc)                # second trade (08:00-08:10 UTC) not old enough yet
     calls = []
 
     def fake(trade):
         calls.append(trade["open"])
         return _bars(step=0.1)
     out = sf.update(now, f, NEW, fake)
-    assert out == ["logged 2026-11-04T08:00"]                              # 11-03 trade predates FORWARD_START
+    assert out == ["logged 2026-11-04T06:00"]                              # 11-03 trade predates FORWARD_START
     assert sf.update(now, f, NEW, fake) == [] and len(calls) == 1          # idempotent
-    later = datetime(2026, 11, 4, 11, 0, tzinfo=timezone.utc)
-    assert sf.update(later, f, NEW, fake) == ["logged 2026-11-04T10:00"]
+    later = datetime(2026, 11, 4, 9, 0, tzinfo=timezone.utc)
+    assert sf.update(later, f, NEW, fake) == ["logged 2026-11-04T08:00"]
     rows = sf.read_rows(f)
     assert len(rows) == 2 and float(rows[0]["net_3"]) < float(rows[0]["gross_3"])
 
@@ -87,3 +95,12 @@ def test_report_empty_and_filled(tmp_path):
     sf.update(datetime(2026, 11, 4, 12, 0, tzinfo=timezone.utc), f, NEW, lambda t: _bars(step=0.2))
     txt = sf.report(f)
     assert "d=3 min" in txt and "pirminis" in txt and "Sonic paskelbtas" in txt
+
+
+def test_sync_check_flags_unsynchronised_feed(tmp_path):
+    rows = [{"sonic_pts": str(p), "gross_0": str(g), "entry_0": "4000"}
+            for p, g in [(4, 10), (-2, -5), (3, 7.5), (5, 12), (-3, -7), (2, 5), (6, 15), (-1, -2.5), (4, 9.5)]]
+    assert sf.sync_check(rows) > 0.95
+    shuffled = [dict(r, gross_0=g) for r, g in zip(rows, ["5", "-7", "12", "-2.5", "10", "9.5", "-5", "15", "7.5"])]
+    assert sf.sync_check(shuffled) < 0.5
+    assert sf.sync_check(rows[:5]) is None

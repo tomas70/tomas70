@@ -64,3 +64,29 @@ ataskaita apie tai, ar sekimas veiktų.
 ## Ko nedarau
 - Neieškau geresnių d, filtrų (valanda, kryptis, loto dydis) ar kaštų po pirmo rezultato.
 - Nekeičiu kriterijų. Jei nepraeina — nesiūlau „pataisyto“ varianto be naujos registracijos.
+
+---
+
+## Priedas (užrašytas po pirmo istorinio bėgimo): laiko juosta
+
+**Kas nutiko.** Pirmas bėgimas (`sonic_follow_results_utc_misread.txt`), laikus skaitant kaip UTC,
+davė duomenų tikrumo sąlygos pažeidimą: Sonic paskelbto judesio ir rinkos judesio koreliacija
+−0.02 (sekėjas d = 0: +0.11 vs Sonic +4.01 USD/oz). Verdiktas buvo „neaišku“.
+
+**Tyrinėjamoji diagnostika (NE iš anksto registruota, `research_sonic_tzdiag.py`).** Išbandyti
+sveikų valandų poslinkiai −4…+5 val.: tik **+3** davė koreliaciją **0.83** (sekėjas +4.21 vs Sonic
++4.01 USD/oz); visi kiti |corr| ≤ 0.04. Papildomas patikrinimas 2026-10-26…30 (Europa jau žiemos
+laiku nuo spalio 25, JAV dar ne): +3 corr 0.99, +2 corr 0.07 (n = 4). Išvada: publikuojamas laikas
+yra brokerio serverio laikrodis — **UTC+3, kol Niujorke galioja vasaros laikas, kitaip UTC+2**.
+Perėjimas 2026-11-01 dar nestebėtas; forward ataskaita turi tai tikrinti (žr. žemiau).
+
+**Dėmesio.** Poslinkis parinktas pagal Sonic paskelbtų ir rinkos judesių koreliaciją, o ne pagal
+sekėjo P&L, bet ant TOS PAČIOS imties, todėl pakartotas testas laiko juostos požiūriu nėra
+nepriklausomas. Tai duomenų formato pataisymas, ne našumo parametras.
+
+**Pakartojimas.** Visos taisyklės, vėlavimai, kaštai ir kriterijai LIEKA TOKIE PATYS; keičiasi tik
+publikuotų laikų konvertavimas į UTC. Pirmas (neteisingas) bėgimas paliktas faile kaip įrašas.
+
+**Forward tikrumo patikra.** `/sonic` ataskaita rodys paskutinių ≥ 8 sandorių koreliaciją tarp
+Sonic judesio ir sekėjo d = 0 judesio; jei < 0.5, ataskaita įspėja, kad laiko konvertavimas
+(arba šaltinis) nebetinka.
