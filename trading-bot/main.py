@@ -15,6 +15,7 @@ git branch archive/sweep-bot. What remains:
 Commands (send to your bot from iPhone):
   /paper     → paper tracker status (BTC T50, $100 paper account)
   /options   → Deribit option-quote logger: real prices vs the DVOL proxy
+  /sonic     → forward test of following Sonic AI (gold) trades on Evedex XAUT
   /status    → live balance and 30-day trade stats (from Evedex)
   /positions → open positions (read-only)
   /help      → command list
@@ -43,6 +44,7 @@ from analysis.evedex_account import (
 )
 from analysis.market_data import exchange_url, from_instrument
 from analysis.option_logger import report as option_report, update as option_update
+from analysis.sonic_follow import report as sonic_report, update as sonic_update
 from analysis.paper_tracker import format_report as paper_report, update as paper_update
 from notifications.bot_commands import listen_for_commands
 from notifications.telegram_bot import send_telegram
@@ -102,6 +104,15 @@ def option_job() -> None:
         logger.warning("option logger: %s", exc)
 
 
+def sonic_job() -> None:
+    """Log new Sonic AI trades from the public feed and score them for a follower (no orders)."""
+    try:
+        for line in sonic_update():
+            logger.info("sonic follow: %s", line)
+    except Exception as exc:
+        logger.warning("sonic follow: %s", exc)
+
+
 # ─── Telegram command handler ─────────────────────────────────────────────────
 
 def _positions_text() -> str:
@@ -130,6 +141,7 @@ def handle_command(command: str, args: list[str]) -> str:
             "🤖 <b>Bot komandos:</b>\n\n"
             "/paper — paper portfelis: BTC trend T50 ($100)\n"
             "/options — Deribit opcijų loggeris: realios kainos vs proxy\n"
+            "/sonic — Sonic AI (auksas) sekimo testas ant Evedex XAUT\n"
             "/status — balansas ir 30 d. sandorių statistika (iš Evedex)\n"
             "/positions — atviros pozicijos (tik peržiūra)\n"
             "/help — ši pagalba\n\n"
@@ -144,6 +156,10 @@ def handle_command(command: str, args: list[str]) -> str:
     if command == "/options":
         option_job()
         return option_report()
+
+    if command == "/sonic":
+        sonic_job()
+        return sonic_report()
 
     if command == "/status":
         try:
@@ -191,6 +207,7 @@ def main() -> None:
     logger.info("Bot paleistas | paper tracker kas %d min + Telegram komandos", PAPER_INTERVAL_MINUTES)
 
     paper_job()  # immediate first run
+    sonic_job()
     option_job()
 
     # Scheduler runs in its own thread — schedule setup must happen inside
@@ -198,6 +215,7 @@ def main() -> None:
     def _scheduler_loop() -> None:
         schedule.every(PAPER_INTERVAL_MINUTES).minutes.do(paper_job)
         schedule.every(PAPER_INTERVAL_MINUTES).minutes.do(option_job)
+        schedule.every(PAPER_INTERVAL_MINUTES).minutes.do(sonic_job)
         while True:
             schedule.run_pending()
             time.sleep(60)
