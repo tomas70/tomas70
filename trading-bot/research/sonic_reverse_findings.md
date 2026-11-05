@@ -25,3 +25,22 @@ laiko požymiuose. Kainos+laiko taisyklė jos neatkartos (grynasis lūkestis ≈
 Galimi šaltiniai (iš duomenų neatskiriami): (a) sandorių laikai/kainos užfiksuoti po fakto,
 (b) tikra papildoma informacija (srautas, naujienos, brokerio kainų vėlavimas), (c) labai greitas
 reagavimas, kurio pranašumas išnyksta per 3–5 min.
+
+## Papildymas: dydis, dienos taisyklės, išėjimo forma (po starto, 476 sandoriai, x1)
+Skaičiuota inline iš sandorių sąrašo (lotai, P&L) + Evedex XAUT minutės kelias.
+
+- **Dydis:** 87 % sandorių lygiai 0.10 lot; 13 % 0.2–0.5. Didesni lotai turi TRUMPESNĮ stopą
+  (pralaimėjimo vid. 1.0 pt prie ≥0.2 lot vs 2.3 pt prie <0.2) → rizika vienam sandoriui
+  beveik pastovi (~$20–25 ≈ 0.02 % ekvity): lotas ≈ fiksuota rizika / stopo atstumas. Dideli lotai
+  laimi dažniau (94 % vs 86 %). Po pralaimėjimo lotas NEDIDĖJA (0.118 vs 0.118); ankstesnis
+  „didina po nuostolio“ radinys galiojo tik prieš viešą startą.
+- **Dienos taisyklė:** sandorių per dieną 1: 131, 2: 89, 3: 37, 4: 10, 5+: 3; dienos P&L mediana
+  $58 (5–95 %: $14…$138), pralaimėjimo dienų 7 iš 270. Po laimėjimo kitas sandoris tą pačią dieną
+  tik 38 %, po pralaimėjimo **76 %** (vid. po ~2.8 val.). Kai dienos P&L > $100, tolesnės prekybos
+  tikimybė 16 %; > $200 — beveik 0. Atitinka „prekiauti iki mažo dienos tikslo, po nuostolio bandyti
+  vėl“.
+- **Išėjimai:** pralaimėjimai uždaromi arti blogiausio taško (pts − MAE mediana −0.30), 75 % jų
+  niekada nebuvo pliuse po 1 min. Laimėjimų efektyvumas (realizuota / maksimali nauda) mediana 0.84.
+- **Valandos / dienos / pusės:** vid. P&L vienam sandoriui $32–41 visose valandų grupėse, visose
+  savaitės dienose ir abiejose pusėse — pranašumas nepriklauso nuo sesijos. Specialaus naujienų
+  laiko klasterio nėra (~21 % įėjimų ±2 min nuo :00/:30, atsitiktinai būtų 17 %).
