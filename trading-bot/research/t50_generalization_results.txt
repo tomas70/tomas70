@@ -1,0 +1,27 @@
+═══ TESTAS 1 (PIRMINIS): ETH ═══
+── ETH T50 ──  dienų 3289, 2017-10-06 → 2026-10-07
+  Sharpe T50 1.07 vs B&H 0.71 (skirtumas +0.36); bootstrap P(skirt.≤0) = 0.078 (riba 0.05), 5-as pct -0.05
+  alfa vs beta-suderintas B&H: +34.0%/m., NW t +2.40, beta 0.49 (reikia t > 2.0)
+  maxDD T50 -64% vs B&H -94%
+  laikotarpiai: P1 2018-20: 1.00 vs 0.50 | P2 2021-22: 0.91 vs 0.74 | P3 2023-: 1.15 vs 0.63  → laimėta 3
+  kaštų stresas (0.25%/pusę): Sharpe 1.02 vs B&H 0.71
+  Kriterijai: 1 False | 2 True | 3 True | 4 True | 5 True  →  NEPRAEINA
+  aprašomieji: metinė grąža T50 58% vs B&H 27%; top-3 mėn. sudaro 669% viso pranašumo (2018-03, 2022-06, 2018-11)
+
+  (aprašomasis, be verdikto) ETH T100: Sharpe 0.85 vs B&H 0.66
+  (aprašomasis, be verdikto) ETH T200: Sharpe 0.77 vs B&H 0.57
+
+═══ TESTAS 2 (ANTRINIS): point-in-time top-10 krepšelis ═══
+  universas: 687 monetų cache'e (point-in-time, su delistuotomis)
+── Krepšelis T50 ──  dienų 2958, 2018-09-02 → 2026-10-07
+  Sharpe T50 0.76 vs B&H 0.36 (skirtumas +0.41); bootstrap P(skirt.≤0) = 0.063 (riba 0.025), 5-as pct -0.03
+  alfa vs beta-suderintas B&H: +23.0%/m., NW t +2.07, beta 0.42 (reikia t > 2.0)
+  maxDD T50 -75% vs B&H -94%
+  laikotarpiai: P1 2018-20: 1.04 vs 0.60 | P2 2021-22: 0.74 vs -0.05 | P3 2023-: 0.58 vs 0.51  → laimėta 3
+  kaštų stresas (0.25%/pusę): Sharpe 0.68 vs B&H 0.36
+  Kriterijai: 1 False | 2 True | 3 True | 4 True | 5 True  →  NEPRAEINA
+  aprašomieji: metinė grąža T50 28% vs B&H -4%; top-3 mėn. sudaro 261% viso pranašumo (2022-05, 2022-06, 2018-11)
+
+Aprašomasis: BTC T50 ir ETH T50 dienos grąžų koreliacija 0.56
+
+Verdiktas pagal registraciją: ETH NEPRAEINA, krepšelis NEPRAEINA

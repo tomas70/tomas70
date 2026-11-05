@@ -1,0 +1,34 @@
+PAXG 15m: 2020-08-28 12:00:00+00:00 → 2026-11-05 07:15:00+00:00, 216848 žvakių
+Proxy sąlyga: dienos grąžų koreliacija PAXG vs IB XAUUSD (n=123) = 0.995  (reikia ≥ 0.95): OK
+
+═══ R1 Londono proveržis ═══
+    Dev  (K1)              n= 763 gross   -6.1 net   -7.6 bps  t -7.28  win  36%  PF  0.51
+    Test (K1)              n= 561 gross   -1.4 net   -2.9 bps  t -1.82  win  41%  PF  0.80
+    Test (K2 stresas)      n= 561 gross   -1.4 net   -5.4 bps  t -3.40  win  37%  PF  0.66
+    pagal metus (K1): 2020: -16.1 (80)  2021: -16.0 (208)  2022: -0.3 (225)  2023: -6.4 (219)  2024: -7.2 (227)  2025: -3.0 (237)  2026: -1.4 (208)
+    → NEPRAEINA
+
+═══ R2 intraday momentum ═══
+    Dev  (K1)              n= 840 gross   +1.1 net   -0.4 bps  t -0.32  win  46%  PF  0.97
+    Test (K1)              n= 601 gross   +4.0 net   +2.5 bps  t +1.25  win  52%  PF  1.17
+    Test (K2 stresas)      n= 601 gross   +4.0 net   -0.0 bps  t -0.02  win  49%  PF  1.00
+    pagal metus (K1): 2020: +0.2 (88)  2021: +1.3 (247)  2022: +2.7 (240)  2023: -4.6 (238)  2024: +0.2 (238)  2025: +4.1 (258)  2026: +0.8 (220)
+    → NEPRAEINA
+
+═══ R3 sesijos atsisukimas ═══
+    Dev  (K1)              n= 846 gross   +2.1 net   +0.6 bps  t +0.33  win  48%  PF  1.03
+    Test (K1)              n= 604 gross   -4.9 net   -6.4 bps  t -2.24  win  47%  PF  0.77
+    Test (K2 stresas)      n= 604 gross   -4.9 net   -8.9 bps  t -3.11  win  46%  PF  0.70
+    pagal metus (K1): 2020: +1.9 (88)  2021: +1.3 (248)  2022: +1.4 (237)  2023: +2.1 (243)  2024: -3.1 (246)  2025: -4.8 (256)  2026: -11.3 (220)
+    → NEPRAEINA
+
+═══ R4 valandos impulso atsisukimas ═══
+    Dev  (K1)              n= 422 gross   +1.8 net   +0.3 bps  t +0.15  win  49%  PF  1.02
+    Test (K1)              n= 382 gross   +0.1 net   -1.4 bps  t -0.78  win  48%  PF  0.91
+    Test (K2 stresas)      n= 382 gross   +0.1 net   -3.9 bps  t -2.17  win  45%  PF  0.76
+    pagal metus (K1): 2020: +1.8 (82)  2021: +4.8 (146)  2022: -6.4 (135)  2023: -0.1 (83)  2024: +3.8 (111)  2025: -1.5 (151)  2026: -2.5 (178)
+    → NEPRAEINA
+
+Verdiktas pagal registraciją: R1 NE, R2 NE, R3 NE, R4 NE
+
+[exited with code 0]

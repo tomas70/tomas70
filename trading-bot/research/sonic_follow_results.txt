@@ -1,0 +1,43 @@
+Sonic sandorių iš viso 642; imtis 240 (2026-04-07 → 2026-10-30); atmesta: {'prieš imties pradžią': 402, 'laikymas > 12 h': 0}
+Pilnai įvertinta 239 sandorių; be Evedex žvakių: 1
+
+═══ REZULTATAI PAGAL VĖLAVIMĄ IR KAŠTUS (bps nuo įėjimo kainos, 1 sandoris) ═══
+  PIRMINIS: 0.04%/pusę + 0.20 USD spread
+    d = 0 min                                    vid.  +0.85 bps  laimi  54%  PF  1.30  suma     +204 bps  dienų t +1.72
+    d = 1 min                                    vid.  -1.25 bps  laimi  45%  PF  0.65  suma     -299 bps  dienų t -2.48
+    d = 3 min                                    vid.  -4.81 bps  laimi  27%  PF  0.22  suma    -1150 bps  dienų t -7.86
+    d = 5 min                                    vid.  -6.54 bps  laimi  20%  PF  0.15  suma    -1563 bps  dienų t -9.30
+  tik spread'as (be fee)
+    d = 0 min                                    vid.  +8.85 bps  laimi  85%  PF 13.04  suma    +2116 bps  dienų t +19.13
+    d = 1 min                                    vid.  +6.75 bps  laimi  81%  PF  9.48  suma    +1613 bps  dienų t +17.02
+    d = 3 min                                    vid.  +3.19 bps  laimi  62%  PF  2.91  suma     +762 bps  dienų t +6.68
+    d = 5 min                                    vid.  +1.46 bps  laimi  54%  PF  1.57  suma     +349 bps  dienų t +2.54
+  0.02%/pusę + spread (maker? NEPATIKRINTA)
+    d = 0 min                                    vid.  +4.85 bps  laimi  75%  PF  4.24  suma    +1160 bps  dienų t +10.66
+    d = 1 min                                    vid.  +2.75 bps  laimi  66%  PF  2.53  suma     +657 bps  dienų t +6.43
+    d = 3 min                                    vid.  -0.81 bps  laimi  44%  PF  0.77  suma     -194 bps  dienų t -1.54
+    d = 5 min                                    vid.  -2.54 bps  laimi  37%  PF  0.47  suma     -607 bps  dienų t -4.07
+  CFD tipo 0.10 USD round trip
+    d = 0 min                                    vid.  +9.54 bps  laimi  86%  PF 16.03  suma    +2281 bps  dienų t +20.35
+    d = 1 min                                    vid.  +7.44 bps  laimi  84%  PF 12.02  suma    +1777 bps  dienų t +18.72
+    d = 3 min                                    vid.  +3.88 bps  laimi  65%  PF  3.73  suma     +927 bps  dienų t +8.18
+    d = 5 min                                    vid.  +2.15 bps  laimi  57%  PF  1.95  suma     +513 bps  dienų t +3.77
+
+  Bruto (be kaštų):
+    d = 0 min: vid. bruto +9.77 bps = break-even round-trip kaštai (~4.89 bps/pusę)
+    d = 1 min: vid. bruto +7.67 bps = break-even round-trip kaštai (~3.83 bps/pusę)
+    d = 3 min: vid. bruto +4.11 bps = break-even round-trip kaštai (~2.05 bps/pusę)
+    d = 5 min: vid. bruto +2.38 bps = break-even round-trip kaštai (~1.19 bps/pusę)
+
+  Sonic paskelbtas vid. judesys: +4.01 USD/oz;  sekėjas d=0: +4.23 USD/oz
+
+═══ KRITERIJAI (pirminis scenarijus) ═══
+  Sąlyga 4 — proxy koreliacija d=0 vs Sonic judesys: 0.83 (reikia > 0.8)
+  1  d=3: vid. -4.81 bps, dienų t -7.86 (reikia > 3.0):  False
+  2  d=5 vid. > 0 (-6.54):  False
+  3  trečdaliai (d=3): -7.40, -4.66, -2.35  → ≥2 teigiami:  False
+
+Verdiktas pagal registraciją: NEPRAEINA
+(Nei vienas rezultatas netikrina, ar Sonic paskyra tikra.)
+
+[exited with code 0]

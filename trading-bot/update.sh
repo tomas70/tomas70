@@ -50,12 +50,14 @@ FILES=(
     analysis/evedex_account.py
     analysis/paper_tracker.py
     analysis/option_logger.py
+    analysis/sonic_follow.py
     analysis/pair_selection.py
     notifications/__init__.py
     notifications/telegram_bot.py
     notifications/bot_commands.py
     tests/test_paper_tracker.py
     tests/test_option_logger.py
+    tests/test_sonic_follow.py
 )
 
 FAILED=0
@@ -92,7 +94,7 @@ else
     # the check with "No module named 'analysis'" and refused to restart a
     # bot whose files were in fact fine.
     if (cd "$DIR" && "$VENV_PY" -c "
-import analysis.market_data, analysis.evedex_account, analysis.paper_tracker, analysis.option_logger, analysis.pair_selection
+import analysis.market_data, analysis.evedex_account, analysis.paper_tracker, analysis.option_logger, analysis.sonic_follow, analysis.pair_selection
 import notifications.telegram_bot, notifications.bot_commands
 import main
 print('✅ visi moduliai importuojasi')

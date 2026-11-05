@@ -1,0 +1,1 @@
+Source: https://github.com/Jakeschincariol/day-trader-skill (commit 3d0f4ef, MIT). Reviewed before install: reads public data only (Yahoo, Nasdaq Trader, SEC, House Clerk); no secrets; broker skill is paper-by-default and needs explicit approval.
