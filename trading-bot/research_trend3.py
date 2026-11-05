@@ -111,7 +111,7 @@ def ew_monthly(close: pd.DataFrame, fee: float, funding: pd.DataFrame, use_fundi
 
 
 def single(close: pd.Series, funding: pd.Series, fee: float, use_funding: bool) -> pd.Series:
-    sig = (close > close.rolling(SMA_N).mean()).astype(float).where(close.rolling(SMA_N).notna())
+    sig = (close > close.rolling(SMA_N).mean()).astype(float).where(close.rolling(SMA_N).mean().notna())
     held = sig.shift(1)
     r = held * close.pct_change() - fee * sig.diff().abs().fillna(0)
     if use_funding:

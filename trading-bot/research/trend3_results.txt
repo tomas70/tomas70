@@ -1,0 +1,52 @@
+Duomenys: 2020-08-28 → 2026-11-04  (2260 d.)
+Deribit funding vid. {'BTC': 7.3, 'ETH': 5.8} %/m. (visa imtis)
+
+Lyginamas langas: 2020-10-28 → 2026-11-04  (2199 d.)
+
+═══ PIRMINIS (perp funding) ═══
+  TREND-3                            Sharpe  1.32  CAGR   23.8%  maxDD  -25.5%
+  IV-B&H (be signalo)                Sharpe  0.91  CAGR   22.4%  maxDD  -35.5%
+  EW-B&H mėn. rebalansas             Sharpe  0.83  CAGR   30.4%  maxDD  -58.9%
+  BTC T50                            Sharpe  1.06  CAGR   41.4%  maxDD  -58.2%
+
+═══ kaštų stresas 0.25% ═══
+  TREND-3                            Sharpe  1.11  CAGR   19.5%  maxDD  -29.9%
+  IV-B&H (be signalo)                Sharpe  0.89  CAGR   21.8%  maxDD  -35.7%
+  EW-B&H mėn. rebalansas             Sharpe  0.82  CAGR   30.2%  maxDD  -59.0%
+  BTC T50                            Sharpe  0.98  CAGR   37.1%  maxDD  -59.7%
+
+═══ aukso funding 5% ═══
+  TREND-3                            Sharpe  1.22  CAGR   21.7%  maxDD  -27.1%
+  IV-B&H (be signalo)                Sharpe  0.79  CAGR   18.5%  maxDD  -37.1%
+  EW-B&H mėn. rebalansas             Sharpe  0.83  CAGR   30.4%  maxDD  -58.9%
+  BTC T50                            Sharpe  1.06  CAGR   41.4%  maxDD  -58.2%
+
+═══ spot (be funding) ═══
+  TREND-3                            Sharpe  1.44  CAGR   26.6%  maxDD  -25.1%
+  IV-B&H (be signalo)                Sharpe  1.00  CAGR   25.1%  maxDD  -35.5%
+  EW-B&H mėn. rebalansas             Sharpe  0.93  CAGR   36.4%  maxDD  -59.3%
+  BTC T50                            Sharpe  1.23  CAGR   51.6%  maxDD  -58.0%
+
+═══ KRITERIJAI (pirminis režimas) ═══
+  1 Sharpe > IV-B&H (1.32 vs 0.91), bootstrap P=0.082 (≤0.05): False
+  2 Sharpe ≥ BTC T50 (1.32 vs 1.06): True
+  3 maxDD -25.5% vs IV-B&H -35.5%, riba -30%: True
+  4 trečdaliai (laimėta [True, False, True]): True
+  5 kaštų stresas Sharpe 1.11 vs 0.89: True
+  6 aukso funding 5% (P=0.067): False
+
+Verdiktas pagal registraciją: NEPRAEINA
+
+═══ APRAŠOMIEJI ═══
+  vid. bendra ekspozicija 55%, dalis dienų visiškai grynuosiuose 18%, vid. svoriai {'BTC': 0.11, 'ETH': 0.08, 'GOLD': 0.35}, apyvarta 23.5×/m.
+  metinė grąža % :
+        T3  IVBH    T50
+2020  27.9  29.7  102.2
+2021  23.6  28.9   92.5
+2022 -14.4 -23.8  -50.1
+2023  33.2  45.1  125.3
+2024  18.7  45.3   61.6
+2025  41.4  37.9    0.5
+2026  19.8  -8.9   13.1
+  aukso T50 atskirai: Sharpe 0.57 (aukso B&H 0.76)
+  ETH T50 atskirai: Sharpe 1.03 (ETH B&H 0.77)
